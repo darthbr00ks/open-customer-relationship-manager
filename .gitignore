@@ -1,7 +1,6 @@
 .env
-*.pyc
-__pycache__/
-.venv/
+node_modules/
 dist/
-*.egg-info/
+coverage/
+*.log
 secrets/

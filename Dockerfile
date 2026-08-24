@@ -1,10 +1,30 @@
-FROM python:3.12-slim
+# Build stage: compile TypeScript with dev dependencies present.
+FROM node:22-slim AS build
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
+COPY package.json package-lock.json ./
+RUN npm ci
 
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Runtime stage: production dependencies and compiled output only.
+FROM node:22-slim
+
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=build /app/dist ./dist
+COPY drizzle ./drizzle
+
+USER node
+
+EXPOSE 8000
+
+CMD ["node", "dist/server.js"]

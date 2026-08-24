@@ -1,7 +1,8 @@
 # ADR 0001: Implementation language for open-rm
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
+- Superseded implementation: the initial FastAPI/SQLAlchemy service (PR #1)
 
 ## Context
 
@@ -126,6 +127,38 @@ that.
 - If the target shifts to **large-enterprise deployments** with heavy
   concurrency and compliance requirements, Java/Kotlin or .NET becomes the
   better choice.
+
+## Implementation
+
+The initial implementation of open-rm landed as a Python/FastAPI service and was
+subsequently ported to TypeScript per this decision. The concrete stack is:
+
+- **Runtime:** Node.js 20+ with TypeScript in strict mode.
+- **HTTP:** Fastify, exposing the same `/api/v1` REST surface as the FastAPI
+  service.
+- **Persistence:** Drizzle ORM over PostgreSQL. `src/db/schema.ts` is the source
+  of truth; SQL migrations are generated from it, replacing Alembic.
+- **Validation:** Zod, filling the role Pydantic played.
+- **Tests:** Vitest, running against a real PostgreSQL database.
+
+The port preserved the table names, column names, enum types, indexes, and
+constraints of the original schema, and the JSON field names of the original
+API, so the data model carried over unchanged.
+
+Three deliberate deviations were made, each fixing a defect rather than
+reproducing it:
+
+1. **List endpoints are bounded.** The FastAPI version returned every matching
+   row; list endpoints now take `limit` (default 50, max 200) and `offset`, and
+   order by `created_at DESC, id ASC` so paging is stable. Unbounded list
+   endpoints were identified above as the top performance risk for this
+   workload.
+2. **Junction lookups are workspace-scoped.** Detail and update on
+   `entity-persons` and `incident-cases` previously matched on id alone, which
+   let a caller read or modify another workspace's rows. They are now scoped by
+   `workspace_id` like every other resource.
+3. **Duplicate keys return 409.** A unique-constraint violation previously
+   surfaced as an unhandled 500.
 
 ## Consequences
 

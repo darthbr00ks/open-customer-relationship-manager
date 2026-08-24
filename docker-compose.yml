@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16
@@ -12,6 +10,11 @@ services:
       - db_password
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_rm_user -d open_rm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     ports:
       - "5432:5432"
 
@@ -19,14 +22,14 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     # DATABASE_URL must be provided in .env, e.g.:
-    #   DATABASE_URL=******db:5432/open_rm
+    #   DATABASE_URL=postgresql://open_rm_user:PASSWORD@db:5432/open_rm
     env_file:
       - .env
     ports:
       - "8000:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 secrets:
   db_password:
