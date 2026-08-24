@@ -20,8 +20,8 @@ services:
     restart: unless-stopped
     depends_on:
       - db
-    environment:
-      DATABASE_URL: postgresql://open_rm_user@db:5432/open_rm
+    # DATABASE_URL must be provided in .env, e.g.:
+    #   DATABASE_URL=******db:5432/open_rm
     env_file:
       - .env
     ports:

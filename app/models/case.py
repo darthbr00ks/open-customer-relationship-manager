@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import UUID, DateTime, Enum, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import UUID, DateTime, Enum, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, SharedMixin
