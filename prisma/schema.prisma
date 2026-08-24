@@ -1,0 +1,391 @@
+// Field names are snake_case throughout so that the database columns, the Zod
+// validation schemas, and the JSON API all share one naming convention with no
+// mapping layer in between.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/* -------------------------------------------------------------------------- */
+/* Enums                                                                       */
+/* -------------------------------------------------------------------------- */
+
+enum EntityType {
+  company
+  nonprofit
+  government
+  education
+  association
+  household
+  other
+
+  @@map("entity_type_enum")
+}
+
+enum RelationshipStage {
+  prospect
+  customer
+  partner
+  former_customer
+  inactive
+
+  @@map("relationship_stage_enum")
+}
+
+enum RelationshipType {
+  employee
+  owner
+  advisor
+  board_member
+  volunteer
+  contractor
+  customer_contact
+  other
+
+  @@map("relationship_type_enum")
+}
+
+enum AffiliationStatus {
+  current
+  former
+
+  @@map("affiliation_status_enum")
+}
+
+enum DealStage {
+  qualification
+  discovery
+  proposal
+  negotiation
+  won
+  lost
+
+  @@map("deal_stage_enum")
+}
+
+enum CaseStatus {
+  new
+  open
+  pending
+  resolved
+  closed
+
+  @@map("case_status_enum")
+}
+
+enum CasePriority {
+  low
+  medium
+  high
+  urgent
+
+  @@map("case_priority_enum")
+}
+
+enum CaseSource {
+  email
+  phone
+  web
+  internal
+  integration
+  other
+
+  @@map("case_source_enum")
+}
+
+enum IncidentStatus {
+  investigating
+  identified
+  monitoring
+  resolved
+  closed
+
+  @@map("incident_status_enum")
+}
+
+enum IncidentSeverity {
+  low
+  medium
+  high
+  critical
+
+  @@map("incident_severity_enum")
+}
+
+enum ImpactLevel {
+  minor
+  moderate
+  major
+  critical
+
+  @@map("impact_level_enum")
+}
+
+enum RequestStatus {
+  submitted
+  under_review
+  planned
+  in_progress
+  completed
+  declined
+
+  @@map("request_status_enum")
+}
+
+enum RequestPriority {
+  low
+  medium
+  high
+
+  @@map("request_priority_enum")
+}
+
+/* -------------------------------------------------------------------------- */
+/* Models                                                                      */
+/* -------------------------------------------------------------------------- */
+
+model Entity {
+  id                  String            @id @default(uuid()) @db.Uuid
+  workspace_id        String            @db.Uuid
+  owner_user_id       String?           @db.Uuid
+  created_at          DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime          @updatedAt @db.Timestamptz(6)
+  created_by_user_id  String?           @db.Uuid
+  updated_by_user_id  String?           @db.Uuid
+  archived_at         DateTime?         @db.Timestamptz(6)
+  name                String            @db.VarChar(255)
+  legal_name          String?           @db.VarChar(255)
+  entity_type         EntityType
+  relationship_stage  RelationshipStage @default(prospect)
+  description         String?           @db.Text
+  website_url         String?           @db.VarChar(2048)
+  primary_domain      String?           @db.VarChar(255)
+  primary_email       String?           @db.VarChar(320)
+  primary_phone       String?           @db.VarChar(50)
+  address_line_1      String?           @db.VarChar(255)
+  address_line_2      String?           @db.VarChar(255)
+  city                String?           @db.VarChar(100)
+  region              String?           @db.VarChar(100)
+  postal_code         String?           @db.VarChar(20)
+  country_code        String?           @db.VarChar(2)
+  notes               String?           @db.Text
+
+  entity_persons  EntityPerson[]
+  deals           Deal[]
+  cases           SupportCase[]
+  requests        FeatureRequest[]
+  incident_cases  IncidentCase[]
+
+  @@index([workspace_id, name], map: "ix_entity_workspace_name")
+  @@index([workspace_id, relationship_stage], map: "ix_entity_workspace_stage")
+  @@index([workspace_id, primary_domain], map: "ix_entity_workspace_domain")
+  @@index([workspace_id], map: "ix_entity_workspace_id")
+  @@index([owner_user_id], map: "ix_entity_owner_user_id")
+  @@map("entity")
+}
+
+model Person {
+  id                  String    @id @default(uuid()) @db.Uuid
+  workspace_id        String    @db.Uuid
+  owner_user_id       String?   @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id  String?   @db.Uuid
+  updated_by_user_id  String?   @db.Uuid
+  archived_at         DateTime? @db.Timestamptz(6)
+  first_name          String    @db.VarChar(100)
+  last_name           String?   @db.VarChar(100)
+  preferred_name      String?   @db.VarChar(100)
+  primary_email       String?   @db.VarChar(320)
+  primary_phone       String?   @db.VarChar(50)
+  linkedin_url        String?   @db.VarChar(2048)
+  description         String?   @db.Text
+  notes               String?   @db.Text
+
+  entity_persons EntityPerson[]
+  cases          SupportCase[]
+  requests       FeatureRequest[]
+
+  @@index([workspace_id, last_name], map: "ix_person_workspace_last_name")
+  @@index([workspace_id, primary_email], map: "ix_person_workspace_email")
+  @@index([workspace_id], map: "ix_person_workspace_id")
+  @@map("person")
+}
+
+model EntityPerson {
+  id                 String            @id @default(uuid()) @db.Uuid
+  workspace_id       String            @db.Uuid
+  entity_id          String            @db.Uuid
+  person_id          String            @db.Uuid
+  relationship_type  RelationshipType
+  job_title          String?           @db.VarChar(255)
+  department         String?           @db.VarChar(255)
+  is_primary_contact Boolean           @default(false)
+  status             AffiliationStatus @default(current)
+  started_on         DateTime?         @db.Date
+  ended_on           DateTime?         @db.Date
+  notes              String?           @db.Text
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @updatedAt @db.Timestamptz(6)
+
+  entity Entity @relation(fields: [entity_id], references: [id])
+  person Person @relation(fields: [person_id], references: [id])
+
+  @@unique([workspace_id, entity_id, person_id], map: "uq_entity_person")
+  @@index([workspace_id], map: "ix_entity_person_workspace")
+  @@map("entity_person")
+}
+
+model Deal {
+  id                        String    @id @default(uuid()) @db.Uuid
+  workspace_id              String    @db.Uuid
+  owner_user_id             String?   @db.Uuid
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id        String?   @db.Uuid
+  updated_by_user_id        String?   @db.Uuid
+  archived_at               DateTime? @db.Timestamptz(6)
+  name                      String    @db.VarChar(255)
+  entity_id                 String    @db.Uuid
+  primary_contact_person_id String?   @db.Uuid
+  description               String?   @db.Text
+  stage                     DealStage @default(qualification)
+  amount                    Decimal?  @db.Decimal(18, 4)
+  currency_code             String    @default("USD") @db.VarChar(3)
+  probability               Int?
+  expected_close_date       DateTime? @db.Date
+  closed_at                 DateTime? @db.Timestamptz(6)
+  next_step                 String?   @db.Text
+  lost_reason               String?   @db.Text
+  notes                     String?   @db.Text
+
+  entity Entity @relation(fields: [entity_id], references: [id])
+
+  @@index([workspace_id, entity_id], map: "ix_deal_workspace_entity")
+  @@index([workspace_id, stage], map: "ix_deal_workspace_stage")
+  @@index([workspace_id, owner_user_id], map: "ix_deal_workspace_owner")
+  @@index([workspace_id, expected_close_date], map: "ix_deal_expected_close_date")
+  @@map("deal")
+}
+
+model SupportCase {
+  id                    String       @id @default(uuid()) @db.Uuid
+  workspace_id          String       @db.Uuid
+  owner_user_id         String?      @db.Uuid
+  created_at            DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime     @updatedAt @db.Timestamptz(6)
+  created_by_user_id    String?      @db.Uuid
+  updated_by_user_id    String?      @db.Uuid
+  archived_at           DateTime?    @db.Timestamptz(6)
+  case_number           String       @db.VarChar(50)
+  subject               String       @db.VarChar(500)
+  description           String       @db.Text
+  entity_id             String?      @db.Uuid
+  reported_by_person_id String?      @db.Uuid
+  status                CaseStatus   @default(new)
+  priority              CasePriority @default(medium)
+  category              String?      @db.VarChar(100)
+  source                CaseSource?
+  due_at                DateTime?    @db.Timestamptz(6)
+  resolved_at           DateTime?    @db.Timestamptz(6)
+  resolution            String?      @db.Text
+
+  entity             Entity?        @relation(fields: [entity_id], references: [id])
+  reported_by_person Person?        @relation(fields: [reported_by_person_id], references: [id])
+  incident_cases     IncidentCase[]
+
+  @@unique([workspace_id, case_number], map: "uq_case_number")
+  @@index([workspace_id, status], map: "ix_case_workspace_status")
+  @@index([workspace_id, priority], map: "ix_case_workspace_priority")
+  @@index([workspace_id, owner_user_id], map: "ix_case_workspace_owner")
+  @@map("case")
+}
+
+model Incident {
+  id                 String           @id @default(uuid()) @db.Uuid
+  workspace_id       String           @db.Uuid
+  owner_user_id      String?          @db.Uuid
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime         @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?          @db.Uuid
+  updated_by_user_id String?          @db.Uuid
+  archived_at        DateTime?        @db.Timestamptz(6)
+  incident_number    String           @db.VarChar(50)
+  title              String           @db.VarChar(500)
+  description        String           @db.Text
+  status             IncidentStatus   @default(investigating)
+  severity           IncidentSeverity
+  started_at         DateTime?        @db.Timestamptz(6)
+  identified_at      DateTime?        @db.Timestamptz(6)
+  resolved_at        DateTime?        @db.Timestamptz(6)
+  closed_at          DateTime?        @db.Timestamptz(6)
+  root_cause         String?          @db.Text
+  resolution         String?          @db.Text
+  internal_notes     String?          @db.Text
+  public_update      String?          @db.Text
+
+  incident_cases IncidentCase[]
+
+  @@unique([workspace_id, incident_number], map: "uq_incident_number")
+  @@index([workspace_id, status], map: "ix_incident_workspace_status")
+  @@index([workspace_id, severity], map: "ix_incident_workspace_severity")
+  @@map("incident")
+}
+
+model IncidentCase {
+  id                 String       @id @default(uuid()) @db.Uuid
+  workspace_id       String       @db.Uuid
+  incident_id        String       @db.Uuid
+  case_id            String       @db.Uuid
+  entity_id          String       @db.Uuid
+  impact_level       ImpactLevel?
+  impact_description String?      @db.Text
+  linked_at          DateTime     @default(now()) @db.Timestamptz(6)
+  unlinked_at        DateTime?    @db.Timestamptz(6)
+  created_by_user_id String?      @db.Uuid
+
+  incident Incident    @relation(fields: [incident_id], references: [id])
+  case     SupportCase @relation(fields: [case_id], references: [id])
+  entity   Entity      @relation(fields: [entity_id], references: [id])
+
+  @@unique([incident_id, case_id], map: "uq_incident_case")
+  @@index([workspace_id], map: "ix_incident_case_workspace")
+  @@index([workspace_id, entity_id], map: "ix_incident_case_entity")
+  @@map("incident_case")
+}
+
+model FeatureRequest {
+  id                     String          @id @default(uuid()) @db.Uuid
+  workspace_id           String          @db.Uuid
+  owner_user_id          String?         @db.Uuid
+  created_at             DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime        @updatedAt @db.Timestamptz(6)
+  created_by_user_id     String?         @db.Uuid
+  updated_by_user_id     String?         @db.Uuid
+  archived_at            DateTime?       @db.Timestamptz(6)
+  request_number         String          @db.VarChar(50)
+  title                  String          @db.VarChar(500)
+  description            String          @db.Text
+  entity_id              String?         @db.Uuid
+  requested_by_person_id String?         @db.Uuid
+  status                 RequestStatus   @default(submitted)
+  priority               RequestPriority @default(medium)
+  category               String?         @db.VarChar(100)
+  business_need          String?         @db.Text
+  decision_notes         String?         @db.Text
+  target_date            DateTime?       @db.Date
+  completed_at           DateTime?       @db.Timestamptz(6)
+
+  entity              Entity? @relation(fields: [entity_id], references: [id])
+  requested_by_person Person? @relation(fields: [requested_by_person_id], references: [id])
+
+  @@unique([workspace_id, request_number], map: "uq_request_number")
+  @@index([workspace_id, status], map: "ix_request_workspace_status")
+  @@index([workspace_id, priority], map: "ix_request_workspace_priority")
+  @@index([workspace_id, owner_user_id], map: "ix_request_workspace_owner")
+  @@map("request")
+}

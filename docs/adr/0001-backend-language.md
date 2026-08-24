@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-08-24
-- Superseded implementation: the initial FastAPI/SQLAlchemy service (PR #1)
+- History: implemented in Python/FastAPI (PR #1), ported to TypeScript, then
+  moved to a full-stack Next.js architecture
 
 ## Context
 
@@ -46,7 +47,7 @@ different language — without touching the main application.
 
 ## Options considered
 
-### TypeScript (Node.js) — recommended
+### TypeScript (Node.js) — chosen
 
 - **Contributor base:** the largest on GitHub. Critically, the web UI will be
   TypeScript regardless of the backend choice, so a TS backend means one
@@ -130,35 +131,51 @@ that.
 
 ## Implementation
 
-The initial implementation of open-rm landed as a Python/FastAPI service and was
-subsequently ported to TypeScript per this decision. The concrete stack is:
+open-rm was first implemented as a Python/FastAPI service, then ported to
+TypeScript per this decision, and subsequently moved onto a full-stack Next.js
+architecture. The current stack is:
 
-- **Runtime:** Node.js 20+ with TypeScript in strict mode.
-- **HTTP:** Fastify, exposing the same `/api/v1` REST surface as the FastAPI
-  service.
-- **Persistence:** Drizzle ORM over PostgreSQL. `src/db/schema.ts` is the source
-  of truth; SQL migrations are generated from it, replacing Alembic.
-- **Validation:** Zod, filling the role Pydantic played.
-- **Tests:** Vitest, running against a real PostgreSQL database.
+| Concern | Choice |
+|---|---|
+| Framework | Next.js (App Router), React 19 |
+| Language | TypeScript, strict mode |
+| Persistence | Prisma over PostgreSQL |
+| Validation | Zod |
+| UI components | shadcn/ui (Radix primitives, owned in-repo) |
+| Client state | Zustand |
+| Background jobs | BullMQ over Redis |
+| Tests | Vitest against real Postgres and Redis |
 
-The port preserved the table names, column names, enum types, indexes, and
-constraints of the original schema, and the JSON field names of the original
-API, so the data model carried over unchanged.
+Next.js collapses what were previously two deployables — an API service and a
+separate frontend — into one codebase, which serves the contributor-reach
+argument above: a contributor can follow a change from the form field to the SQL
+query without crossing a repository or a language boundary.
 
-Three deliberate deviations were made, each fixing a defect rather than
-reproducing it:
+The worker is a second process running the same code. This is the "keep
+CPU-bound work out of the request path" consequence below, made concrete: bulk
+CSV import and pipeline report aggregation run there, and reports are cached in
+Redis so a cold read enqueues a rebuild rather than blocking on a full
+aggregate.
 
-1. **List endpoints are bounded.** The FastAPI version returned every matching
-   row; list endpoints now take `limit` (default 50, max 200) and `offset`, and
-   order by `created_at DESC, id ASC` so paging is stable. Unbounded list
-   endpoints were identified above as the top performance risk for this
-   workload.
+### Preserved across the ports
+
+Table names, column names, native PostgreSQL enum types, indexes, and unique
+constraints have carried through every port unchanged, as have the JSON field
+names of the REST API. Field names are snake_case at every layer — database,
+Prisma model, Zod schema, JSON — so no mapping layer exists to drift.
+
+### Deliberate deviations from the original FastAPI service
+
+Each fixes a defect rather than reproducing it:
+
+1. **List endpoints are bounded.** The original returned every matching row;
+   lists now take `limit` (default 50, max 200) and `offset`, ordered by
+   `created_at DESC, id ASC` so paging is stable. Unbounded list endpoints were
+   identified above as the top performance risk for this workload.
 2. **Junction lookups are workspace-scoped.** Detail and update on
    `entity-persons` and `incident-cases` previously matched on id alone, which
-   let a caller read or modify another workspace's rows. They are now scoped by
-   `workspace_id` like every other resource.
-3. **Duplicate keys return 409.** A unique-constraint violation previously
-   surfaced as an unhandled 500.
+   let a caller read or modify another workspace's rows.
+3. **Duplicate keys return 409** rather than an unhandled 500.
 
 ## Consequences
 

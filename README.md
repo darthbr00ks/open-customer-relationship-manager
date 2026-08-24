@@ -1,10 +1,13 @@
 # open-rm
 
-An open relationship management tool built with TypeScript, Fastify, Drizzle ORM, and PostgreSQL.
+An open relationship management tool.
+
+**Stack:** Next.js (App Router) · TypeScript · Prisma + PostgreSQL · Zod ·
+shadcn/ui · Zustand · BullMQ + Redis.
 
 ## Data model
 
-Open RM manages six primary objects plus two junctions:
+Six primary objects plus two junctions:
 
 | Object | Description |
 |---|---|
@@ -20,41 +23,47 @@ Open RM manages six primary objects plus two junctions:
 All records are scoped by `workspace_id`. Primary objects support soft-deletion
 via `archived_at`; the junctions do not.
 
+## Architecture
+
+```
+Browser ──▶ Next.js App Router
+              ├── /app/*             UI (shadcn/ui components, Zustand store)
+              └── /app/api/v1/*      REST API (Zod validation, Prisma)
+                                          │
+                        ┌─────────────────┴─────────────────┐
+                        ▼                                   ▼
+                  PostgreSQL                         Redis (BullMQ)
+                                                            │
+                                                            ▼
+                                                    Worker process
+                                              (bulk import, reporting)
+```
+
+The worker is a separate process running the same codebase. Bulk import and
+report aggregation are the CPU- and memory-heavy parts of a CRM, so they run
+there rather than in a request handler.
+
 ## Getting started
 
 ### Prerequisites
 - Node.js 20+
 - PostgreSQL 14+
+- Redis 6+
 
 ### Installation
 
 ```bash
 npm install
+cp .env.example .env    # then set DATABASE_URL and REDIS_URL
+npx prisma generate
+npm run db:migrate:dev  # or db:migrate in production
 ```
 
-### Configuration
-
-Copy `.env.example` to `.env` and set `DATABASE_URL` to your PostgreSQL
-connection string.
-
-### Run migrations
+### Run
 
 ```bash
-npm run db:migrate
-```
-
-Migrations are generated from `src/db/schema.ts`. After changing the schema:
-
-```bash
-npm run db:generate   # write a new SQL migration into drizzle/
-npm run db:migrate    # apply it
-```
-
-### Start the API
-
-```bash
-npm run dev     # watch mode
-npm run build && npm start   # compiled
+npm run dev       # Next.js app on :3000
+npm run worker    # background worker (separate terminal, required for import/reports)
 ```
 
 ### Docker Compose
@@ -64,10 +73,12 @@ npm run build && npm start   # compiled
 docker compose up
 ```
 
-## API overview
+Compose starts Postgres, Redis, the app, and the worker.
 
-All endpoints are prefixed with `/api/v1` and scoped by a required
-`workspace_id` query parameter (on create, `workspace_id` is part of the body).
+## API
+
+All endpoints are under `/api/v1` and scoped by a required `workspace_id` query
+parameter (on create, `workspace_id` is part of the body).
 
 | Resource | Prefix |
 |---|---|
@@ -82,7 +93,7 @@ All endpoints are prefixed with `/api/v1` and scoped by a required
 
 Each resource supports:
 
-- `GET /` — list, `POST /` — create, `GET /{id}` — detail, `PATCH /{id}` — partial update
+- `GET /` — list · `POST /` — create · `GET /{id}` — detail · `PATCH /{id}` — partial update
 - `POST /{id}/archive` — soft-delete (primary objects only)
 
 ### List parameters
@@ -94,11 +105,21 @@ Each resource supports:
 | `offset` | 0 | |
 | `include_archived` | `false` | Primary objects only. |
 
-`entity-persons` additionally filters on `entity_id` and `person_id`;
-`incident-cases` on `incident_id` and `case_id`.
+`entity-persons` also filters on `entity_id` / `person_id`; `incident-cases` on
+`incident_id` / `case_id`. Results are ordered newest-first with `id` as a
+tiebreak, so paging is stable.
 
-Results are ordered newest-first with `id` as a tiebreak, so paging with
-`limit`/`offset` is stable.
+### Jobs and reports
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/jobs` | Enqueue `import-entities` or `pipeline-report`; returns a job id |
+| `GET /api/v1/jobs/{id}` | Job state, progress, and result |
+| `GET /api/v1/reports/pipeline` | Cached pipeline report; queues a rebuild on a cache miss |
+
+`POST /api/v1/jobs` with `{"job":"import-entities","workspace_id":"…","csv":"…"}`
+bulk-imports entities. Invalid rows are reported with their row number and
+reason rather than failing the whole file.
 
 ### Errors
 
@@ -108,40 +129,49 @@ Errors return `{ "detail": ... }`:
 |---|---|
 | 404 | No such record in this workspace |
 | 409 | Unique constraint violation (e.g. duplicate `case_number`) |
-| 422 | Request validation failed; `detail` carries the field-level issues |
+| 422 | Validation failed; `detail` carries the field-level issues |
 
-## Testing
-
-The suite runs against a real PostgreSQL database and truncates tables between
-tests, so point it at a throwaway database:
-
-```bash
-DATABASE_URL=postgresql://postgres@localhost:5432/open_rm_test npm test
-```
+## Development
 
 ```bash
 npm run typecheck
+npm run lint
+npm test          # needs a throwaway Postgres and a Redis
 ```
 
-## Architecture notes
+The test suite runs against real Postgres and Redis and truncates tables between
+tests:
 
-- `src/db/schema.ts` is the single source of truth for the schema; SQL
-  migrations in `drizzle/` are generated from it.
-- Property names are snake_case throughout, so the database columns, the
-  validation schemas, and the JSON API all agree without a mapping layer.
-- `src/http/resource.ts` implements the endpoints shared by every resource;
-  `src/app.ts` registers each one with its table and validation schemas. Adding
-  a resource means adding a table, a pair of Zod schemas, and one registration.
+```bash
+DATABASE_URL=postgresql://postgres@localhost:5432/open_rm_test \
+REDIS_URL=redis://localhost:6379 \
+npm test
+```
+
+## Conventions
+
+- **Field names are snake_case everywhere** — database columns, Prisma model
+  fields, Zod schemas, and JSON responses all agree, so there is no mapping
+  layer to keep in sync.
+- `prisma/schema.prisma` is the source of truth for the schema; SQL migrations
+  are generated from it.
+- `src/lib/api/resource.ts` implements the endpoints shared by every resource
+  and `src/lib/api/resources.ts` registers them. Adding a resource means adding
+  a Prisma model, a pair of Zod schemas, one registry entry, and the route files.
 - Money is stored as `numeric(18,4)` and carried as a string end to end to avoid
   floating-point rounding.
+- shadcn/ui components live in `src/components/ui` and are owned by this repo,
+  as shadcn intends — edit them directly.
 
 ## Known gaps
 
 - **No authentication or authorization.** `workspace_id` is supplied by the
-  caller and is not yet a security boundary. Do not expose this service publicly
+  caller and is not a security boundary. Do not expose this service publicly
   as-is.
-- Bulk import/export, deduplication, and reporting are not implemented; when
-  they are, they belong in a background worker rather than the request path.
+- The UI covers the dashboard, entities (list/create/archive), cases (list), and
+  CSV import. Persons, deals, incidents, and requests are API-only so far.
+- List filtering on the entities screen is client-side over the loaded page;
+  server-side search is not implemented.
 
 ## License
 

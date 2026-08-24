@@ -15,21 +15,47 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "5432:5432"
 
-  api:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
     build: .
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    # DATABASE_URL must be provided in .env, e.g.:
+      redis:
+        condition: service_healthy
+    # DATABASE_URL and REDIS_URL must be provided in .env, e.g.:
     #   DATABASE_URL=postgresql://open_rm_user:PASSWORD@db:5432/open_rm
+    #   REDIS_URL=redis://redis:6379
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "3000:3000"
+
+  # Same image, different entrypoint: imports and reports run here, not in a request.
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["npm", "run", "worker"]
 
 secrets:
   db_password:
@@ -37,3 +63,4 @@ secrets:
 
 volumes:
   pgdata:
+  redisdata:

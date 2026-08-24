@@ -1,6 +1,26 @@
-.env
+# Dependencies
 node_modules/
-dist/
-coverage/
-*.log
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# Production
+/build
+
+# Testing
+/coverage
+
+# Environment
+.env
+.env*.local
 secrets/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors / OS
+.DS_Store
+*.pem
