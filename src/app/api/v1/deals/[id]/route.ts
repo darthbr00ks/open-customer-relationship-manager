@@ -3,4 +3,4 @@ import { resources } from '@/lib/api/resources';
 
 export const dynamic = 'force-dynamic';
 
-export const { GET, PATCH } = itemHandlers(resources['deals']);
+export const { GET, PATCH, PUT, DELETE } = itemHandlers(resources['deals']);
