@@ -17,6 +17,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
 const resourceName = args.find((a) => !a.startsWith('--'));
@@ -32,7 +33,7 @@ if (!/^[a-z][a-z0-9-]*$/.test(resourceName)) {
   process.exit(1);
 }
 
-const BASE = join(import.meta.dirname, '..', 'src', 'app', 'api', 'v1', resourceName);
+const BASE = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src', 'app', 'api', 'v1', resourceName);
 const ID_DIR = join(BASE, '[id]');
 const ARCHIVE_DIR = join(ID_DIR, 'archive');
 

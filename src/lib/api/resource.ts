@@ -271,7 +271,7 @@ export function itemHandlers(config: ResourceConfig) {
           return fail(404, `${label} not found`);
         }
 
-        const row = await delegate.delete({ where: { id } });
+        const row = await delegate.delete({ where: { id, workspace_id } });
         return NextResponse.json(serialize(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
