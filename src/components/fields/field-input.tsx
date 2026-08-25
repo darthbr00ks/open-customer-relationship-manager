@@ -1,5 +1,6 @@
 'use client';
 
+import { FieldValue } from '@/components/fields/field-value';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,7 +26,13 @@ export function FieldInput({
   id?: string;
 }) {
   if (field.readOnly) {
-    return <p className="text-muted-foreground py-2 text-sm">{value != null && value !== '' ? String(value) : '—'}</p>;
+    // Same rendering as the display-only field system — dates get formatted, `*_user_id`
+    // gets resolved to a name — instead of dumping the raw stored value.
+    return (
+      <p className="py-2 text-sm">
+        <FieldValue field={field} value={value} workspaceId={workspaceId} />
+      </p>
+    );
   }
 
   switch (field.type) {

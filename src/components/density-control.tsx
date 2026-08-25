@@ -4,8 +4,9 @@ import { Rows4 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { DENSITIES, DENSITY_LABELS, useUIStore, type Density } from '@/stores/ui';
+import { DENSITIES, DENSITY_LABELS, MAX_SECTION_COLUMNS, MIN_SECTION_COLUMNS, useUIStore, type Density } from '@/stores/ui';
 
 /** Row-height preview bars, tighter for denser options, so the choice is visible before it's picked. */
 const PREVIEW_GAPS: Record<Density, string> = {
@@ -22,14 +23,25 @@ const DESCRIPTIONS: Record<Density, string> = {
   ultra: 'Maximum records on screen at once.',
 };
 
+const COLUMN_OPTIONS = Array.from(
+  { length: MAX_SECTION_COLUMNS - MIN_SECTION_COLUMNS + 1 },
+  (_, i) => MIN_SECTION_COLUMNS + i,
+);
+
 export function DensityControl() {
   const density = useUIStore((state) => state.density);
   const setDensity = useUIStore((state) => state.setDensity);
+  const sectionColumns = useUIStore((state) => state.sectionColumns);
+  const setSectionColumns = useUIStore((state) => state.setSectionColumns);
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={`Density: ${DENSITY_LABELS[density]}`}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Density: ${DENSITY_LABELS[density]}, ${sectionColumns} column${sectionColumns === 1 ? '' : 's'}`}
+        >
           <Rows4 />
         </Button>
       </PopoverTrigger>
@@ -57,6 +69,33 @@ export function DensityControl() {
               </span>
             </button>
           ))}
+        </div>
+
+        <Separator className="my-2" />
+
+        <div className="px-2 pb-1">
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-muted-foreground text-xs font-medium">Columns per section</p>
+            <span className="text-xs font-medium tabular-nums">{sectionColumns}</span>
+          </div>
+          <p className="text-muted-foreground mb-2 text-xs">Fields per row on record pages and forms.</p>
+          <div className="grid grid-cols-6 gap-1">
+            {COLUMN_OPTIONS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setSectionColumns(n)}
+                aria-pressed={n === sectionColumns}
+                aria-label={`${n} column${n === 1 ? '' : 's'}`}
+                className={cn(
+                  'flex h-8 items-center justify-center rounded-md border text-xs font-medium transition-colors hover:bg-accent',
+                  n === sectionColumns ? 'border-primary bg-primary text-primary-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </div>
       </PopoverContent>
     </Popover>

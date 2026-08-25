@@ -101,6 +101,7 @@ export function RecordFormDialog({
 }) {
   const object = OBJECTS[objectKey];
   const density = useUIStore((state) => state.density);
+  const sectionColumns = useUIStore((state) => state.sectionColumns);
   const currentUser = useCurrentUserStore();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -163,7 +164,11 @@ export function RecordFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl" data-density={density}>
+      <DialogContent
+        className="w-full"
+        style={{ maxWidth: `min(92vw, ${420 + sectionColumns * 140}px)` }}
+        data-density={density}
+      >
         <div className="relative" ref={wrapperRef}>
           <FoldIndicator wrapperRef={wrapperRef} />
           <form onSubmit={submit} className="flex flex-col" style={{ gap: 'var(--d-gap-section)' }}>
@@ -179,14 +184,21 @@ export function RecordFormDialog({
                   {section.title}
                 </legend>
                 <div
-                  className="grid grid-cols-1 sm:grid-cols-2"
-                  style={{ gap: 'var(--d-gap-field)', rowGap: 'var(--d-gap-field)' }}
+                  className="grid"
+                  style={{
+                    gap: 'var(--d-gap-field)',
+                    rowGap: 'var(--d-gap-field)',
+                    gridTemplateColumns: `repeat(${sectionColumns}, minmax(160px, 1fr))`,
+                  }}
                 >
                   {section.fields.map((field) => {
                     const locked = lockedFields?.includes(field.key);
-                    const span = field.type === 'longtext' ? 'sm:col-span-2' : '';
                     return (
-                      <div key={field.key} className={`space-y-1.5 ${span}`}>
+                      <div
+                        key={field.key}
+                        className="space-y-1.5"
+                        style={field.type === 'longtext' ? { gridColumn: '1 / -1' } : undefined}
+                      >
                         <Label htmlFor={field.key}>
                           {field.label}
                           {field.required ? <span className="text-destructive"> *</span> : null}
