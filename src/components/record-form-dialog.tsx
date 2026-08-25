@@ -83,7 +83,11 @@ export function RecordFormDialog({
         invalidateList(object.resource, workspaceId);
         onSaved?.(row);
       } else {
-        const row = await api.update<Row>(object.resource, recordId!, workspaceId, {
+        if (!recordId) {
+          setError('Cannot update: record id is missing');
+          return;
+        }
+        const row = await api.update<Row>(object.resource, recordId, workspaceId, {
           updated_by_user_id: currentUser.userId,
           ...payload,
         });

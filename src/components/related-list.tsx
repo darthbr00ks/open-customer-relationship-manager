@@ -120,12 +120,24 @@ function RowFragment<Row extends { id: string }>({
   onNavigate: () => void;
 }) {
   const clickable = Boolean(href || expand);
+  const handleKeyDown = clickable
+    ? (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          expand ? onToggle() : onNavigate();
+        }
+      }
+    : undefined;
   return (
     <>
       <TableRow
         style={{ height: 'var(--d-row-h)' }}
         className={cn(clickable && 'cursor-pointer')}
         onClick={expand ? onToggle : href ? onNavigate : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        role={clickable ? 'button' : undefined}
+        aria-expanded={expand ? isExpanded : undefined}
+        onKeyDown={handleKeyDown}
       >
         {columns.map((col, i) => (
           <TableCell

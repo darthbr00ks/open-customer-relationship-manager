@@ -31,14 +31,18 @@ export function ActivityFeed({
   workspaceId: string;
   filter?: 'all' | 'notes';
 }) {
-  const { rows, loading } = useCachedList<Note>('notes', workspaceId, { limit: 200, includeArchived: true });
+  const { rows, loading } = useCachedList<Note>('notes', workspaceId, {
+    limit: 200,
+    includeArchived: true,
+    filters: { parent_id: parentId },
+  });
   const currentUser = useCurrentUserStore();
   const userLabel = useUserLabel();
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
 
   const entries = rows
-    .filter((note) => note.parent_type === parentType && note.parent_id === parentId)
+    .filter((note) => note.parent_type === parentType)
     .filter((note) => filter === 'all' || note.kind === 'note')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
