@@ -112,6 +112,8 @@ export type ResourceDelegate = {
   }): Promise<Row[]>;
   create(args: { data: Row }): Promise<Row>;
   update(args: { where: Row; data: Row }): Promise<Row>;
+  upsert(args: { where: Row; create: Row; update: Row }): Promise<Row>;
+  delete(args: { where: Row }): Promise<Row>;
 };
 
 export type ResourceConfig = {
@@ -185,9 +187,9 @@ export function collectionHandlers(config: ResourceConfig) {
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-/** GET (detail) and PATCH for `/api/v1/<resource>/[id]`. */
+/** GET (detail), PATCH, PUT (upsert), and DELETE for `/api/v1/<resource>/[id]`. */
 export function itemHandlers(config: ResourceConfig) {
-  const { delegate, label, updateSchema, dateOnlyFields = [] } = config;
+  const { delegate, label, createSchema, updateSchema, dateOnlyFields = [] } = config;
 
   /** Archived records stay reachable by id so a client can still read them. */
   const findScoped = async (workspaceId: string, id: string) =>
@@ -227,6 +229,49 @@ export function itemHandlers(config: ResourceConfig) {
         const data = onlyProvided(updateSchema.parse(body) as Row, body);
 
         const row = await delegate.update({ where: { id }, data });
+        return NextResponse.json(serialize(row, dateOnlyFields));
+      } catch (error) {
+        return toErrorResponse(error);
+      }
+    },
+
+    async PUT(request: Request, context: RouteContext) {
+      try {
+        const { id } = await context.params;
+        const { workspace_id } = workspaceQuerySchema.parse(
+          Object.fromEntries(new URL(request.url).searchParams),
+        );
+
+        const parsedId = z.uuid().parse(id);
+        const body = (await request.json().catch(() => ({}))) as Row;
+        // Merge workspace_id from the query string so callers don't repeat it in the body.
+        const createData = createSchema.parse({ ...body, workspace_id }) as Row;
+        const updateData = onlyProvided(updateSchema.parse(body) as Row, body);
+
+        const row = await delegate.upsert({
+          where: { id: parsedId, workspace_id },
+          create: { id: parsedId, ...createData },
+          update: updateData,
+        });
+        return NextResponse.json(serialize(row, dateOnlyFields));
+      } catch (error) {
+        return toErrorResponse(error);
+      }
+    },
+
+    async DELETE(request: Request, context: RouteContext) {
+      try {
+        const { id } = await context.params;
+        const { workspace_id } = workspaceQuerySchema.parse(
+          Object.fromEntries(new URL(request.url).searchParams),
+        );
+
+        const existing = await findScoped(workspace_id, z.uuid().parse(id));
+        if (!existing) {
+          return fail(404, `${label} not found`);
+        }
+
+        const row = await delegate.delete({ where: { id } });
         return NextResponse.json(serialize(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
