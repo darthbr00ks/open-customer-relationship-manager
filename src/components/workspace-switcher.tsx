@@ -12,7 +12,7 @@ import { useWorkspaceStore } from '@/stores/workspace';
  * Until there is authentication, the workspace is entered by hand; a fresh
  * install can generate an id so the app is usable immediately.
  */
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ compact = false }: { compact?: boolean }) {
   const workspaceId = useWorkspaceStore((state) => state.workspaceId);
   const setWorkspaceId = useWorkspaceStore((state) => state.setWorkspaceId);
 
@@ -29,32 +29,35 @@ export function WorkspaceSwitcher() {
   const value = draft ?? workspaceId ?? '';
 
   if (!hydrated) {
-    return <div className="h-9 w-72" />;
+    return <div className={compact ? 'h-9 w-full' : 'h-9 w-72'} />;
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={compact ? 'flex flex-col gap-2' : 'flex items-center gap-2'}>
       <Input
         value={value}
         onChange={(event) => setDraft(event.target.value)}
         placeholder="workspace uuid"
-        className="w-72 font-mono text-xs"
+        className={compact ? 'w-full font-mono text-xs' : 'w-72 font-mono text-xs'}
         aria-label="Workspace ID"
       />
-      <Button size="sm" variant="secondary" onClick={() => setDraft(crypto.randomUUID())}>
-        New
-      </Button>
-      <Button
-        size="sm"
-        onClick={() => {
-          if (!value) return;
-          setWorkspaceId(value);
-          setDraft(null);
-        }}
-        disabled={value === '' || value === workspaceId}
-      >
-        Use
-      </Button>
+      <div className="flex gap-2">
+        <Button size="sm" variant="secondary" onClick={() => setDraft(crypto.randomUUID())}>
+          New
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (!value) return;
+            setWorkspaceId(value);
+            setDraft(null);
+          }}
+          disabled={value === '' || value === workspaceId}
+          className={compact ? 'flex-1' : undefined}
+        >
+          Use
+        </Button>
+      </div>
     </div>
   );
 }

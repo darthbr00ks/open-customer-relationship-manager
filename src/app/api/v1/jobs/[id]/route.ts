@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { fail, toErrorResponse } from '@/lib/api/resource';
-import { jobQueue } from '@/lib/queue';
+import { getJobQueue } from '@/lib/queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const job = await jobQueue.getJob(id);
+    const job = await getJobQueue().getJob(id);
 
     if (!job) {
       return fail(404, 'Job not found');

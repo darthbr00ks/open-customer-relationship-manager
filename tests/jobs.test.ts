@@ -1,13 +1,14 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { prisma } from '@/lib/prisma';
-import { redis } from '@/lib/redis';
+import { getRedis } from '@/lib/redis';
 import { importEntities } from '@/worker/jobs/import-entities';
 import { buildPipelineReport, pipelineReportKey } from '@/worker/jobs/pipeline-report';
 
 import { resetDatabase, uuid } from './helpers';
 
 const workspace = uuid();
+const redis = getRedis();
 
 beforeEach(async () => {
   await resetDatabase();

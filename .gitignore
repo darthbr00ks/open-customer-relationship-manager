@@ -24,3 +24,4 @@ npm-debug.log*
 # Editors / OS
 .DS_Store
 *.pem
+tsconfig.tsbuildinfo

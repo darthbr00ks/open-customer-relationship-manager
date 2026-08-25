@@ -27,23 +27,23 @@ export type JobName = keyof JobPayloads;
 
 const globalForQueue = globalThis as unknown as { jobQueue?: Queue };
 
-export const jobQueue: Queue =
-  globalForQueue.jobQueue ??
-  new Queue(QUEUE_NAME, {
-    connection: queueConnection,
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
-      removeOnComplete: { age: 3600, count: 500 },
-      removeOnFail: { age: 86400 },
-    },
-  });
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForQueue.jobQueue = jobQueue;
+/** Returns the shared queue without connecting during module initialization. */
+export function getJobQueue(): Queue {
+  if (!globalForQueue.jobQueue) {
+    globalForQueue.jobQueue = new Queue(QUEUE_NAME, {
+      connection: queueConnection,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { age: 3600, count: 500 },
+        removeOnFail: { age: 86400 },
+      },
+    });
+  }
+  return globalForQueue.jobQueue;
 }
 
 /** Enqueue a job with a payload checked against `JobPayloads`. */
 export async function enqueue<N extends JobName>(name: N, payload: JobPayloads[N]) {
-  return jobQueue.add(name, payload);
+  return getJobQueue().add(name, payload);
 }

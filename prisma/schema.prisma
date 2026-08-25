@@ -144,6 +144,26 @@ enum RequestPriority {
   @@map("request_priority_enum")
 }
 
+enum NoteParentType {
+  entity
+  person
+  deal
+  case
+  incident
+  request
+
+  @@map("note_parent_type_enum")
+}
+
+enum NoteKind {
+  /** Hand-written by a user. */
+  note
+  /** Recorded automatically by the app, e.g. a stage change. */
+  system
+
+  @@map("note_kind_enum")
+}
+
 /* -------------------------------------------------------------------------- */
 /* Models                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -388,4 +408,19 @@ model FeatureRequest {
   @@index([workspace_id, priority], map: "ix_request_workspace_priority")
   @@index([workspace_id, owner_user_id], map: "ix_request_workspace_owner")
   @@map("request")
+}
+
+/** A user-authored note or system event in a record's activity timeline. */
+model Note {
+  id                 String         @id @default(uuid()) @db.Uuid
+  workspace_id       String         @db.Uuid
+  parent_type        NoteParentType
+  parent_id          String         @db.Uuid
+  kind               NoteKind       @default(note)
+  body               String         @db.Text
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  created_by_user_id String?        @db.Uuid
+
+  @@index([workspace_id, parent_type, parent_id], map: "ix_note_parent")
+  @@map("note")
 }

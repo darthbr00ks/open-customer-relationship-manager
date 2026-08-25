@@ -1,9 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Theme is an explicit user choice (light / dark / high-contrast), applied as
+ * `data-theme` on <html> by ThemeProvider — not `prefers-color-scheme` or a
+ * `.dark` class. `dark:` utilities key off both dark-family themes, since
+ * high-contrast is a dark theme pushed further, not a fourth visual language.
+ */
+@custom-variant dark (&:is([data-theme="dark"] *, [data-theme="high-contrast"] *));
 
-:root {
+:root,
+:root[data-theme="light"] {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -26,7 +33,7 @@
   --ring: oklch(0.708 0 0);
 }
 
-.dark {
+:root[data-theme="dark"] {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -46,6 +53,29 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+}
+
+/* Near-maximum contrast: true black/white, saturated status colors, thick borders. */
+:root[data-theme="high-contrast"] {
+  --background: oklch(0 0 0);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.06 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.06 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.16 0 0);
+  --muted-foreground: oklch(0.92 0 0);
+  --accent: oklch(0.3 0 0);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.75 0.22 25);
+  --destructive-foreground: oklch(0 0 0);
+  --border: oklch(1 0 0 / 60%);
+  --input: oklch(1 0 0 / 50%);
+  --ring: oklch(1 0 0);
 }
 
 @theme inline {
@@ -81,4 +111,61 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Density system                                                              */
+/*                                                                              */
+/* One attribute on <html> (set by DensityProvider) scales row height,        */
+/* padding, gaps, and type size everywhere. Components consume these as       */
+/* arbitrary-value Tailwind utilities, e.g. `py-[var(--d-cell-py)]`, instead   */
+/* of hardcoding spacing, so nothing needs a density prop threaded through it. */
+/* -------------------------------------------------------------------------- */
+
+:root {
+  --d-row-h: 2.75rem;
+  --d-cell-py: 0.75rem;
+  --d-cell-px: 1rem;
+  --d-font: 0.875rem;
+  --d-font-sm: 0.75rem;
+  --d-gap-section: 2rem;
+  --d-gap-field: 1.25rem;
+  --d-header-py: 1rem;
+  --d-icon: 1rem;
+}
+
+html[data-density='compact'] {
+  --d-row-h: 2.25rem;
+  --d-cell-py: 0.5rem;
+  --d-cell-px: 0.75rem;
+  --d-font: 0.8125rem;
+  --d-font-sm: 0.6875rem;
+  --d-gap-section: 1.5rem;
+  --d-gap-field: 0.875rem;
+  --d-header-py: 0.625rem;
+  --d-icon: 0.9375rem;
+}
+
+html[data-density='dense'] {
+  --d-row-h: 1.875rem;
+  --d-cell-py: 0.3125rem;
+  --d-cell-px: 0.625rem;
+  --d-font: 0.75rem;
+  --d-font-sm: 0.6875rem;
+  --d-gap-section: 1rem;
+  --d-gap-field: 0.625rem;
+  --d-header-py: 0.375rem;
+  --d-icon: 0.875rem;
+}
+
+html[data-density='ultra'] {
+  --d-row-h: 1.5rem;
+  --d-cell-py: 0.125rem;
+  --d-cell-px: 0.5rem;
+  --d-font: 0.6875rem;
+  --d-font-sm: 0.625rem;
+  --d-gap-section: 0.625rem;
+  --d-gap-field: 0.3125rem;
+  --d-header-py: 0.1875rem;
+  --d-icon: 0.75rem;
 }
