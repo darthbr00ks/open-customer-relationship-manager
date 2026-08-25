@@ -53,7 +53,8 @@ list and a layout, not a new page.
 
 - **App shell** (`src/components/app-shell.tsx`) — one tab per object across
   the top, plus Search (⌘K / `/`), Create, a density control, Notifications,
-  Help, and a combined workspace/identity menu on the right.
+  Help, a CTI login/logout button for browser-local telephony sessions, and a
+  combined workspace/identity menu on the right.
 - **List views** (`src/components/list-view.tsx`) — saved views (All / Mine /
   custom, stored per-browser), sortable and show/hide-able columns, filters,
   search, bulk-select + archive, and pagination over the loaded page.
@@ -234,6 +235,10 @@ The test database needs the same schema as the dev one — run
   as-is. The "current user" in the UI (for owner assignment and activity
   attribution) is a name typed into the user menu, stored per-browser —
   not a real identity.
+- **Telephony login is local UI state, not vendor auth.** The CTI button in the
+  header keeps provider/session details in the browser and marks the telephony
+  surface connected or disconnected for that browser only; real provider
+  handshakes and server-side call events are not wired up yet.
 - List/related-list filtering, search, and sort are client-side over the
   loaded page (up to 200 rows); server-side search is not implemented.
 - Saved list views are stored per-browser (`localStorage`), not shared across

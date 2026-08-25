@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Home } from 'lucide-react';
 
 import { CommandPalette } from '@/components/command-palette';
+import { CtiControl } from '@/components/cti-control';
 import { CreateMenu } from '@/components/create-menu';
 import { DensityControl } from '@/components/density-control';
 import { HelpMenu, NotificationsMenu } from '@/components/notifications-menu';
@@ -56,6 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ThemeControl />
             <NotificationsMenu />
             <HelpMenu />
+            <CtiControl />
             <UserMenu />
           </div>
         </div>

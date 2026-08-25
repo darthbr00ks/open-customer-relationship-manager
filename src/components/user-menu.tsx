@@ -45,7 +45,8 @@ export function UserMenu() {
             />
           </div>
           <p className="text-muted-foreground text-xs">
-            There&apos;s no login yet — this just labels records you own and notes you write.
+            There&apos;s still no app login yet — this only labels records you own and notes you
+            write. Telephony sign-in lives in the phone button beside this menu.
           </p>
         </div>
 
