@@ -270,3 +270,23 @@ export const requestCreateSchema = z.object({
 });
 
 export const requestUpdateSchema = z.object({ ...sharedUpdate, ...requestFields }).partial();
+
+/* -------------------------------------------------------------------------- */
+/* Note                                                                        */
+/* -------------------------------------------------------------------------- */
+
+const noteFields = {
+  parent_type: z.enum(['entity', 'person', 'deal', 'case', 'incident', 'request']),
+  parent_id: uuid(),
+  kind: z.enum(['note', 'system']),
+  body: z.string().min(1),
+};
+
+export const noteCreateSchema = z.object({
+  workspace_id: uuid(),
+  created_by_user_id: uuid().nullish(),
+  ...noteFields,
+  kind: noteFields.kind.default('note'),
+});
+
+export const noteUpdateSchema = z.object({ body: noteFields.body }).partial();

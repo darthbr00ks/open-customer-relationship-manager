@@ -79,6 +79,15 @@ export const resources = {
     archivable: true,
     dateOnlyFields: ['target_date'],
   },
+  notes: {
+    delegate: delegate(prisma.note),
+    label: 'Note',
+    createSchema: v.noteCreateSchema,
+    updateSchema: v.noteUpdateSchema,
+    orderBy: 'created_at',
+    archivable: false,
+    filters: ['parent_id'],
+  },
 } as const satisfies Record<string, ResourceConfig>;
 
 export type ResourceName = keyof typeof resources;
