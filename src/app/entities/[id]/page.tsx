@@ -103,7 +103,15 @@ export default function EntityRecordPage() {
         noteParentType="entity"
         recordId={entity.id}
         workspaceId={workspaceId}
-        overview={<RecordOverview layout={object.layout} row={entity} workspaceId={workspaceId} />}
+        overview={
+          <RecordOverview
+            layout={object.layout}
+            row={entity}
+            workspaceId={workspaceId}
+            resource={object.resource}
+            recordId={entity.id}
+          />
+        }
         related={
           <>
             <RelatedList

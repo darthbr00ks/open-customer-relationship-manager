@@ -77,7 +77,15 @@ export default function IncidentRecordPage() {
         noteParentType="incident"
         recordId={incident.id}
         workspaceId={workspaceId}
-        overview={<RecordOverview layout={object.layout} row={incident} workspaceId={workspaceId} />}
+        overview={
+          <RecordOverview
+            layout={object.layout}
+            row={incident}
+            workspaceId={workspaceId}
+            resource={object.resource}
+            recordId={incident.id}
+          />
+        }
         related={
           <RelatedList
             title="Cases"

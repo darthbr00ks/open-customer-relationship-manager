@@ -82,7 +82,15 @@ export default function PersonRecordPage() {
         noteParentType="person"
         recordId={person.id}
         workspaceId={workspaceId}
-        overview={<RecordOverview layout={object.layout} row={person} workspaceId={workspaceId} />}
+        overview={
+          <RecordOverview
+            layout={object.layout}
+            row={person}
+            workspaceId={workspaceId}
+            resource={object.resource}
+            recordId={person.id}
+          />
+        }
         related={
           <>
             <RelatedList

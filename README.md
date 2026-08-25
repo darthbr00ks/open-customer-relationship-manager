@@ -64,14 +64,19 @@ list and a layout, not a new page.
   On an Entity, the People related list expands inline (no navigation) to
   show a contact's info and their other affiliations — the single-view case
   for "I need this person and this entity on screen together."
+- **Inline editing** — double-click any editable field on the Overview tab
+  (`src/components/fields/editable-field.tsx`) to edit it in place: Enter or
+  clicking away saves, Escape discards. Select/lookup/checkbox fields save as
+  soon as you pick a value.
 - **Density** — a header control (Comfortable → Compact → Dense → Ultra)
   rescales row height, padding, and type size everywhere via CSS custom
-  properties (`--d-*` in `globals.css`), for agents who want the most records
-  on screen at once.
+  properties (`--d-*` in `globals.css`), plus a 1–6 columns-per-section
+  control for how many fields sit side by side on record pages and forms.
+- **Theme** — Light / Dark / High contrast (`src/stores/theme.ts`), applied as
+  `data-theme` on `<html>`; High contrast pushes to a true black/white
+  palette with much heavier borders for maximum legibility.
 - **Create/edit forms** — generated from the same per-object layout, in a
-  dialog. When the fields overflow the visible height, a "fold" line marks
-  where scrolling would be needed, so it's clear what's above vs. below it
-  before you commit to a layout.
+  dialog.
 
 There is no admin UI to build layouts by hand yet — see "Known gaps."
 

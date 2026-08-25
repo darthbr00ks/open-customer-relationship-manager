@@ -8,6 +8,7 @@ import { CommandPalette } from '@/components/command-palette';
 import { CreateMenu } from '@/components/create-menu';
 import { DensityControl } from '@/components/density-control';
 import { HelpMenu, NotificationsMenu } from '@/components/notifications-menu';
+import { ThemeControl } from '@/components/theme-control';
 import { UserMenu } from '@/components/user-menu';
 import { cn } from '@/lib/utils';
 import { NAV_OBJECT_ORDER, OBJECTS } from '@/lib/objects';
@@ -52,6 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <CommandPalette workspaceId={workspaceId} />
             <CreateMenu workspaceId={workspaceId} />
             <DensityControl />
+            <ThemeControl />
             <NotificationsMenu />
             <HelpMenu />
             <UserMenu />

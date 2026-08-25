@@ -1,18 +1,28 @@
 'use client';
 
-import { FieldValue } from '@/components/fields/field-value';
+import { EditableField } from '@/components/fields/editable-field';
+import type { ResourceName } from '@/lib/api/resources';
 import type { ObjectLayout } from '@/lib/schema/types';
 import { useUIStore } from '@/stores/ui';
 
-/** Renders a record's fields grouped into the sections its layout defines (spec §6/§7). */
+/**
+ * Renders a record's fields grouped into the sections its layout defines
+ * (spec §6/§7). Every editable field can be double-clicked into an inline
+ * editor — the full create/edit dialog is still there for editing several
+ * fields at once, but a single wrong value shouldn't need it.
+ */
 export function RecordOverview({
   layout,
   row,
   workspaceId,
+  resource,
+  recordId,
 }: {
   layout: ObjectLayout;
   row: Record<string, unknown>;
   workspaceId: string | null;
+  resource: ResourceName;
+  recordId: string;
 }) {
   const sectionColumns = useUIStore((state) => state.sectionColumns);
 
@@ -34,7 +44,13 @@ export function RecordOverview({
                 <div key={field.key} style={field.type === 'longtext' ? { gridColumn: '1 / -1' } : undefined}>
                   <dt className="text-muted-foreground text-xs">{field.label}</dt>
                   <dd style={{ fontSize: 'var(--d-font)' }} className="mt-0.5">
-                    <FieldValue field={field} value={row[field.key]} workspaceId={workspaceId} />
+                    <EditableField
+                      field={field}
+                      value={row[field.key]}
+                      workspaceId={workspaceId}
+                      resource={resource}
+                      recordId={recordId}
+                    />
                   </dd>
                 </div>
               ))}

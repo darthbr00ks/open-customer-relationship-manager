@@ -1,9 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Theme is an explicit user choice (light / dark / high-contrast), applied as
+ * `data-theme` on <html> by ThemeProvider — not `prefers-color-scheme` or a
+ * `.dark` class. `dark:` utilities key off both dark-family themes, since
+ * high-contrast is a dark theme pushed further, not a fourth visual language.
+ */
+@custom-variant dark (&:is([data-theme="dark"] *, [data-theme="high-contrast"] *));
 
-:root {
+:root,
+:root[data-theme="light"] {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -26,7 +33,7 @@
   --ring: oklch(0.708 0 0);
 }
 
-.dark {
+:root[data-theme="dark"] {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -46,6 +53,29 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+}
+
+/* Near-maximum contrast: true black/white, saturated status colors, thick borders. */
+:root[data-theme="high-contrast"] {
+  --background: oklch(0 0 0);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.06 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.06 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.16 0 0);
+  --muted-foreground: oklch(0.92 0 0);
+  --accent: oklch(0.3 0 0);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.75 0.22 25);
+  --destructive-foreground: oklch(0 0 0);
+  --border: oklch(1 0 0 / 60%);
+  --input: oklch(1 0 0 / 50%);
+  --ring: oklch(1 0 0);
 }
 
 @theme inline {

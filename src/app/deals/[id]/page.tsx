@@ -82,7 +82,15 @@ export default function DealRecordPage() {
         noteParentType="deal"
         recordId={deal.id}
         workspaceId={workspaceId}
-        overview={<RecordOverview layout={object.layout} row={deal} workspaceId={workspaceId} />}
+        overview={
+          <RecordOverview
+            layout={object.layout}
+            row={deal}
+            workspaceId={workspaceId}
+            resource={object.resource}
+            recordId={deal.id}
+          />
+        }
       />
 
       {editing ? (

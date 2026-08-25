@@ -66,7 +66,15 @@ export default function RequestRecordPage() {
         noteParentType="request"
         recordId={request.id}
         workspaceId={workspaceId}
-        overview={<RecordOverview layout={object.layout} row={request} workspaceId={workspaceId} />}
+        overview={
+          <RecordOverview
+            layout={object.layout}
+            row={request}
+            workspaceId={workspaceId}
+            resource={object.resource}
+            recordId={request.id}
+          />
+        }
       />
 
       {editing ? (
