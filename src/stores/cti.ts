@@ -70,7 +70,7 @@ export const useCtiStore = create<CtiState>()(
           config: trimConfig(state.config),
           session: {
             status: 'connected',
-            connectedAt: state.session.connectedAt ?? new Date().toISOString(),
+            connectedAt: new Date().toISOString(),
           },
         })),
       disconnect: () =>
