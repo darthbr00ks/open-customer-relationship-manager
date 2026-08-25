@@ -410,14 +410,7 @@ model FeatureRequest {
   @@map("request")
 }
 
-/**
- * A timeline entry on a record: a hand-written note, or a system entry the
- * app records for a notable change (stage moved, case closed, etc). Powers
- * both the record's Activity tab and its Notes tab (a `kind = note` filter
- * of the same feed). Deliberately polymorphic — one small table instead of
- * six near-identical ones — since notes have no relations of their own to
- * model.
- */
+/** A user-authored note or system event in a record's activity timeline. */
 model Note {
   id                 String         @id @default(uuid()) @db.Uuid
   workspace_id       String         @db.Uuid

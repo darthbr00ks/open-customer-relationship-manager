@@ -16,12 +16,12 @@ export type RecordAction = {
   label: string;
   icon: LucideIcon;
   onClick: () => void;
-  /** Shown as its own button; everything else collapses into the "More" menu (spec §11). */
+  /** Shown as its own button; other actions collapse into the "More" menu. */
   primary?: boolean;
   variant?: 'default' | 'outline' | 'destructive';
 };
 
-/** Sticky record-page header: title, archived state, badges, and contextual actions (spec §2/§11). */
+/** Sticky record-page header with title, archived state, badges, and contextual actions. */
 export function RecordHeader({
   title,
   badges,

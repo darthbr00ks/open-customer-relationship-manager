@@ -22,7 +22,6 @@ type Entry = {
   rows: unknown[];
   loading: boolean;
   error: string | null;
-  loadedAt: number;
 };
 
 type CacheState = {
@@ -37,7 +36,7 @@ const useCacheStore = create<CacheState>((set) => ({
       entries: {
         ...state.entries,
         [key]: {
-          ...(state.entries[key] ?? { rows: [], loading: false, error: null, loadedAt: 0 }),
+          ...(state.entries[key] ?? { rows: [], loading: false, error: null }),
           ...patch,
         },
       },
@@ -50,27 +49,45 @@ const cacheKey = (resource: string, workspaceId: string, opts: ListOptions) =>
   `${resource}:${workspaceId}:${opts.includeArchived ? 1 : 0}:${opts.limit ?? 200}`;
 
 const inFlight = new Map<string, Promise<void>>();
+const requestVersions = new Map<string, number>();
+const cachedQueries = new Map<
+  string,
+  { resource: ResourceName; workspaceId: string; options: Required<ListOptions> }
+>();
 
 function load(resource: ResourceName, workspaceId: string, opts: ListOptions, force = false) {
-  const key = cacheKey(resource, workspaceId, opts);
+  const options = {
+    includeArchived: opts.includeArchived ?? false,
+    limit: opts.limit ?? 200,
+  };
+  const key = cacheKey(resource, workspaceId, options);
   if (!force && inFlight.has(key)) return inFlight.get(key)!;
 
+  cachedQueries.set(key, { resource, workspaceId, options });
+  const requestVersion = (requestVersions.get(key) ?? 0) + 1;
+  requestVersions.set(key, requestVersion);
   useCacheStore.getState().set(key, { loading: true, error: null });
   const promise = api
     .list(resource, {
       workspace_id: workspaceId,
-      include_archived: opts.includeArchived ?? false,
-      limit: opts.limit ?? 200,
+      include_archived: options.includeArchived,
+      limit: options.limit,
     })
     .then((rows) => {
-      useCacheStore.getState().set(key, { rows: rows as unknown[], loading: false, error: null, loadedAt: Date.now() });
+      if (requestVersions.get(key) === requestVersion) {
+        useCacheStore.getState().set(key, { rows: rows as unknown[], loading: false, error: null });
+      }
     })
     .catch((cause) => {
-      useCacheStore
-        .getState()
-        .set(key, { loading: false, error: cause instanceof Error ? cause.message : 'Failed to load' });
+      if (requestVersions.get(key) === requestVersion) {
+        useCacheStore
+          .getState()
+          .set(key, { loading: false, error: cause instanceof Error ? cause.message : 'Failed to load' });
+      }
     })
-    .finally(() => inFlight.delete(key));
+    .finally(() => {
+      if (inFlight.get(key) === promise) inFlight.delete(key);
+    });
 
   inFlight.set(key, promise);
   return promise;
@@ -106,12 +123,9 @@ export function useCachedList<T>(
 
 /** Invalidate a cached resource (e.g. after a create/update) so the next read refetches it. */
 export function invalidateList(resource: ResourceName, workspaceId: string) {
-  for (const includeArchived of [false, true]) {
-    for (const limit of [50, 200]) {
-      const key = cacheKey(resource, workspaceId, { includeArchived, limit });
-      if (useCacheStore.getState().entries[key]) {
-        void load(resource, workspaceId, { includeArchived, limit }, true);
-      }
+  for (const query of cachedQueries.values()) {
+    if (query.resource === resource && query.workspaceId === workspaceId) {
+      void load(query.resource, query.workspaceId, query.options, true);
     }
   }
 }

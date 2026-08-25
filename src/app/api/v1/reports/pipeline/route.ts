@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { toErrorResponse } from '@/lib/api/resource';
 import { enqueue } from '@/lib/queue';
-import { redis } from '@/lib/redis';
+import { getRedis } from '@/lib/redis';
 import { pipelineReportKey } from '@/worker/jobs/pipeline-report';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       .object({ workspace_id: z.uuid() })
       .parse(Object.fromEntries(new URL(request.url).searchParams));
 
-    const cached = await redis.get(pipelineReportKey(workspace_id));
+    const cached = await getRedis().get(pipelineReportKey(workspace_id));
     if (cached) {
       return NextResponse.json(JSON.parse(cached));
     }

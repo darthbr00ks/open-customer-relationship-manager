@@ -14,10 +14,8 @@ import { useCurrentUserStore } from '@/stores/current-user';
 const AUTO_SAVE_TYPES = new Set(['select', 'user', 'lookup', 'boolean']);
 
 /**
- * A field on a record's Overview tab that becomes editable in place on a
- * double-click — spec's create/edit form is still there for everything at
- * once, but a single wrong value shouldn't need the whole dialog. Saves on
- * Enter or on losing focus, discards on Escape. Read-only fields (system
+ * A field on a record's Overview tab that becomes editable in place on a double-click.
+ * Saves on Enter or on losing focus, discards on Escape. Read-only fields (system
  * timestamps, audit trail) never become editable.
  */
 export function EditableField({
@@ -39,6 +37,7 @@ export function EditableField({
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cancelledRef = useRef(false);
+  const saveInFlightRef = useRef(false);
   const currentUser = useCurrentUserStore();
 
   useEffect(() => {
@@ -64,11 +63,12 @@ export function EditableField({
   };
 
   const save = async (nextValue: unknown) => {
-    if (cancelledRef.current) return;
+    if (cancelledRef.current || saveInFlightRef.current) return;
     if (nextValue === value || !workspaceId) {
       setEditing(false);
       return;
     }
+    saveInFlightRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -81,6 +81,7 @@ export function EditableField({
     } catch (cause) {
       setError(cause instanceof ApiError ? apiErrorMessage(cause) : 'Could not save');
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   };
@@ -112,6 +113,7 @@ export function EditableField({
       }}
       onBlur={(event) => {
         if (cancelledRef.current) return;
+        if (AUTO_SAVE_TYPES.has(field.type)) return;
         const related = event.relatedTarget as HTMLElement | null;
         // Don't save-and-close for a blur caused by focus moving to something still
         // logically inside this field. That includes a Select's own dropdown, which

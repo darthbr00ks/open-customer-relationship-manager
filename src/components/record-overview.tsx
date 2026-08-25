@@ -6,8 +6,8 @@ import type { ObjectLayout } from '@/lib/schema/types';
 import { useUIStore } from '@/stores/ui';
 
 /**
- * Renders a record's fields grouped into the sections its layout defines
- * (spec §6/§7). Every editable field can be double-clicked into an inline
+ * Renders a record's fields grouped into the sections its layout defines.
+ * Every editable field can be double-clicked into an inline
  * editor — the full create/edit dialog is still there for editing several
  * fields at once, but a single wrong value shouldn't need it.
  */

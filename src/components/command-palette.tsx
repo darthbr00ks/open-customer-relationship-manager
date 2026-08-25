@@ -11,7 +11,7 @@ import { useCachedList } from '@/lib/data-cache';
 import { OBJECTS, titleOf } from '@/lib/objects';
 
 /**
- * Global search across every object (spec §1's header "Search"). There is no
+ * Global search across every object. There is no
  * server-side search endpoint yet (README "Known gaps"), so this searches
  * the same cached pages every list view already loaded — instant once
  * visited, and good enough for a workspace this app is meant to run.

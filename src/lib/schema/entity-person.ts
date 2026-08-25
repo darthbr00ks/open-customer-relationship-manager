@@ -7,7 +7,7 @@ export const affiliationStatusTone = toneMap({ current: 'default', former: 'outl
 
 /**
  * Fields on the Entity↔Person junction — the "role a person plays at an
- * entity." The UI never shows the junction as its own object (per spec §9);
+ * entity." The UI does not show the junction as its own object;
  * these fields surface as extra columns on the People related list and as
  * the body of the "Add person" form.
  */

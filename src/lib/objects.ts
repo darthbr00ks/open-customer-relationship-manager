@@ -152,7 +152,7 @@ export const OBJECTS: Record<ObjectKey, ObjectConfig> = {
 
 export const OBJECT_LIST = Object.values(OBJECTS);
 
-/** Primary top-nav order (spec §1: one tab per major object). */
+/** Objects displayed in the primary navigation, in display order. */
 export const NAV_OBJECT_ORDER: ObjectKey[] = ['entities', 'persons', 'deals', 'cases', 'incidents', 'requests'];
 
 /** Reverse lookup so a lookup field's target resource can be rendered as a link to its record page. */

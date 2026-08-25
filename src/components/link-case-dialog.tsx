@@ -11,7 +11,7 @@ import { api } from '@/lib/api-client';
 import { invalidateList, useCachedList } from '@/lib/data-cache';
 import { IMPACT_LEVELS, type SupportCase } from '@/lib/types';
 
-/** Links an existing Case to this Incident via the IncidentCase junction (spec §9). */
+/** Links an existing case to an incident. */
 export function LinkCaseDialog({
   open,
   onOpenChange,

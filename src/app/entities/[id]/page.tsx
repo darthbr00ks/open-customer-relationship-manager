@@ -239,9 +239,7 @@ export default function EntityRecordPage() {
 }
 
 /**
- * The Entity ↔ Person single-view case (spec §8): expanding a person on the
- * Entity's People list surfaces their contact info and every other entity
- * they're affiliated with, without leaving this page.
+ * Shows a person's contact information and other affiliations inline.
  */
 function PersonInlineDetail({
   person,

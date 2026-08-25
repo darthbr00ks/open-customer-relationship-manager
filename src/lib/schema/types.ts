@@ -1,7 +1,7 @@
 import type { ResourceName } from '@/lib/api/resources';
 
 /**
- * The vocabulary a page layout is built from (spec §6/§7: sections group
+ * The vocabulary a page layout is built from: sections group
  * fields; a field's type drives how it renders in a record and how it's
  * edited in a form). Everything downstream — record sections, list columns,
  * create/edit forms, filters — reads from these definitions instead of

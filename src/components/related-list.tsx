@@ -11,16 +11,13 @@ import { cn } from '@/lib/utils';
 export type RelatedColumn<Row> = { key: string; label: string; render: (row: Row) => React.ReactNode };
 
 /**
- * A compact table showing records related to the one being viewed (spec §9:
- * "People associated with this Entity"). Junction objects (EntityPerson,
+ * A compact table showing records related to the one being viewed. Junction objects (EntityPerson,
  * IncidentCase) are never shown as their own thing — the caller pre-joins
  * them into plain rows, so this component only ever renders "the people /
  * deals / cases that belong here."
  *
  * If `expand` is given, a row click opens an inline detail panel instead of
- * navigating away — the single-page Entity↔Person view from spec §8, so an
- * agent can check a contact's other affiliations without losing their place
- * on the Entity.
+ * navigating away.
  */
 export function RelatedList<Row extends { id: string }>({
   title,

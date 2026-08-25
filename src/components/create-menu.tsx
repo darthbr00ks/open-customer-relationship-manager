@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { NAV_OBJECT_ORDER, OBJECTS, type ObjectKey } from '@/lib/objects';
 
-/** Header "Create" action (spec §1): any object type, one click away, from anywhere in the app. */
+/** Creates any supported object from the application header. */
 export function CreateMenu({ workspaceId }: { workspaceId: string | null }) {
   const [creating, setCreating] = useState<ObjectKey | null>(null);
 

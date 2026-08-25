@@ -30,7 +30,7 @@ type SavedViewsState = {
 };
 
 /**
- * Saved list views (spec §3), stored per browser. There's no auth or a
+ * Saved list views stored per browser. There's no auth or a
  * concept of a shared workspace user base yet, so — unlike the rest of this
  * app's data — these live client-side rather than as a new resource; a
  * single-user local install has no one else to share them with, and it

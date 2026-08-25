@@ -15,7 +15,7 @@ import { useCurrentUserStore } from '@/stores/current-user';
 import { useUserLabel } from '@/hooks/use-user-label';
 
 /**
- * Chronological feed for a record (spec §10). Backed by the `Note` model —
+ * Chronological feed for a record. Backed by the `Note` model —
  * `kind: 'system'` rows are written by contextual actions (stage changes,
  * closing a deal, etc) alongside hand-written `kind: 'note'` rows, so one
  * feed shows both. The Notes tab is the same feed with `filter="notes"`.

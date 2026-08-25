@@ -14,7 +14,7 @@ import { formatLabel } from '@/lib/format';
 import { DEAL_STAGES } from '@/lib/types';
 import { useCurrentUserStore } from '@/stores/current-user';
 
-/** "Change Stage" (spec §11) — moves the deal and drops a system note recording the move. */
+/** Moves a deal to another stage and records the change in its activity feed. */
 export function ChangeStageDialog({
   open,
   onOpenChange,
@@ -83,7 +83,7 @@ export function ChangeStageDialog({
   );
 }
 
-/** "Close Lost" (spec §11) — asks why, since a lost reason is how a pipeline report explains itself later. */
+/** Closes a deal as lost and records the reason. */
 export function CloseLostDialog({
   open,
   onOpenChange,

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import type { JobPayloads } from '@/lib/queue';
-import { cacheKey, redis } from '@/lib/redis';
+import { cacheKey, getRedis } from '@/lib/redis';
 
 /** How long a computed report stays served from cache. */
 const CACHE_TTL_SECONDS = 300;
@@ -52,7 +52,12 @@ export async function buildPipelineReport(
     by_stage,
   };
 
-  await redis.set(pipelineReportKey(payload.workspace_id), JSON.stringify(report), 'EX', CACHE_TTL_SECONDS);
+  await getRedis().set(
+    pipelineReportKey(payload.workspace_id),
+    JSON.stringify(report),
+    'EX',
+    CACHE_TTL_SECONDS,
+  );
 
   return report;
 }

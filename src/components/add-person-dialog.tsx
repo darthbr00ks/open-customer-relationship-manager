@@ -15,9 +15,8 @@ import { useCurrentUserStore } from '@/stores/current-user';
 import type { Person } from '@/lib/types';
 
 /**
- * "Add person" on an Entity (spec §11): find an existing Person or create one
- * on the spot, then attach them via the EntityPerson junction — the junction
- * itself is never exposed as its own object (spec §9).
+ * Finds an existing person or creates one, then attaches them via the EntityPerson junction. The junction
+ * itself is not exposed as its own object.
  */
 export function AddPersonDialog({
   open,

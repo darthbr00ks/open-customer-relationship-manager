@@ -4,7 +4,7 @@ import { ActivityFeed } from '@/components/activity-feed';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { NoteParentType } from '@/lib/objects';
 
-/** Overview | Related | Activity | Notes — the record page's tab structure (spec §2). */
+/** The tabs shared by record pages. */
 export function RecordTabs({
   overview,
   related,

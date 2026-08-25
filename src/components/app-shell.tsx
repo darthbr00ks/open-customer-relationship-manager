@@ -15,7 +15,7 @@ import { NAV_OBJECT_ORDER, OBJECTS } from '@/lib/objects';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 /**
- * Persistent app shell (spec §1): logo, one top-level tab per object, and a
+ * Persistent app shell with a logo, one top-level tab per object, and a
  * right-side cluster of Search / Create / Notifications / Help / User menu
  * that stays constant as the user moves between object workspaces.
  */
