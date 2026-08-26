@@ -47,6 +47,12 @@ export const api = {
       body: JSON.stringify(body),
     });
   },
+  /** POST to a record sub-action, e.g. `chat-conversations/{id}/read`. */
+  action<T>(resource: string, id: string, name: string, workspaceId: string) {
+    return request<T>(`/api/v1/${resource}/${id}/${name}?${query({ workspace_id: workspaceId })}`, {
+      method: 'POST',
+    });
+  },
   archive<T>(resource: string, id: string, workspaceId: string) {
     return request<T>(
       `/api/v1/${resource}/${id}/archive?${query({ workspace_id: workspaceId })}`,

@@ -26,7 +26,7 @@ export const fail = (status: number, detail: unknown) =>
   NextResponse.json({ detail }, { status });
 
 /** Postgres SQLSTATE / Prisma code for a unique constraint violation. */
-function isUniqueViolation(error: unknown): boolean {
+export function isUniqueViolation(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; current != null && depth < 5; depth += 1) {
     const code = (current as { code?: unknown }).code;

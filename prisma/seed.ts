@@ -16,6 +16,12 @@ const owners = [HECTOR, SARAH, MARCUS];
 const ownerOf = (i: number) => owners[i % owners.length]!;
 
 async function reset() {
+  await prisma.chatMessage.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.chatSession.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.chatAuthCode.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.chatConversation.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.chatContact.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.chatChannel.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
   await prisma.note.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
   await prisma.incidentCase.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
   await prisma.entityPerson.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
@@ -170,6 +176,44 @@ async function main() {
     ],
   });
 
+  // Two instances of the chat tool, configured for opposite jobs: the pair the
+  // README walks through, and the quickest way to see that the deal/case and
+  // guest/verified choices really are per-channel.
+  const channelRows = [
+    {
+      name: 'Website sales chat',
+      key: 'sales',
+      description: 'Chat box on the marketing site. Opens a deal so nobody has to re-key an inbound lead.',
+      intake_mode: 'deal',
+      auth_mode: 'none',
+      greeting: 'Interested in open-rm? Ask us anything.',
+      collect_name: true,
+      collect_email: true,
+      deal_stage: 'qualification',
+      owner_user_id: HECTOR,
+      default_assignee_user_id: HECTOR,
+    },
+    {
+      name: 'Customer support',
+      key: 'support',
+      description: 'Signed-in support desk. Verifies the customer by email, then opens a case.',
+      intake_mode: 'case',
+      auth_mode: 'required',
+      greeting: 'Tell us what is going wrong and we will pick it up from here.',
+      collect_name: true,
+      collect_email: true,
+      case_priority: 'medium',
+      case_category: 'Support',
+      owner_user_id: SARAH,
+      default_assignee_user_id: SARAH,
+    },
+  ] as const;
+  await Promise.all(
+    channelRows.map((row, i) =>
+      prisma.chatChannel.create({ data: { workspace_id: WORKSPACE_ID, created_by_user_id: ownerOf(i), ...row } }),
+    ),
+  );
+
   console.log('Seeded:');
   console.log(`  Entities:  8`);
   console.log(`  People:    12`);
@@ -177,6 +221,7 @@ async function main() {
   console.log(`  Cases:     ${cases.length}`);
   console.log(`  Incidents: ${incidents.length}`);
   console.log(`  Requests:  5`);
+  console.log(`  Chat channels: ${channelRows.length} (/chat/widget/sales, /chat/widget/support)`);
   console.log('');
   console.log(`Workspace id (already the app's default): ${WORKSPACE_ID}`);
 }

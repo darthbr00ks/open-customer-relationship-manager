@@ -3,6 +3,7 @@ import {
   LayoutGrid,
   LifeBuoy,
   Lightbulb,
+  MessagesSquare,
   Siren,
   Users,
   type LucideIcon,
@@ -11,6 +12,12 @@ import {
 import type { ResourceName } from '@/lib/api/resources';
 
 import { CASE_FIELDS, CASE_LAYOUT, CASE_LIST_COLUMNS, CASE_SEARCH_FIELDS } from './schema/case';
+import {
+  CHAT_CHANNEL_FIELDS,
+  CHAT_CHANNEL_LAYOUT,
+  CHAT_CHANNEL_LIST_COLUMNS,
+  CHAT_CHANNEL_SEARCH_FIELDS,
+} from './schema/chat-channel';
 import { DEAL_FIELDS, DEAL_LAYOUT, DEAL_LIST_COLUMNS, DEAL_SEARCH_FIELDS } from './schema/deal';
 import { ENTITY_FIELDS, ENTITY_LAYOUT, ENTITY_LIST_COLUMNS, ENTITY_SEARCH_FIELDS } from './schema/entity';
 import {
@@ -28,9 +35,24 @@ import {
 } from './schema/request';
 import type { FieldDef, ObjectLayout } from './schema/types';
 
-export type ObjectKey = 'entities' | 'persons' | 'deals' | 'cases' | 'incidents' | 'requests';
+export type ObjectKey =
+  | 'entities'
+  | 'persons'
+  | 'deals'
+  | 'cases'
+  | 'incidents'
+  | 'requests'
+  | 'chat_channels';
 
-export type NoteParentType = 'entity' | 'person' | 'deal' | 'case' | 'incident' | 'request';
+export type NoteParentType =
+  | 'entity'
+  | 'person'
+  | 'deal'
+  | 'case'
+  | 'incident'
+  | 'request'
+  | 'chat_channel'
+  | 'chat_conversation';
 
 export type ObjectConfig = {
   key: ObjectKey;
@@ -132,6 +154,33 @@ export const OBJECTS: Record<ObjectKey, ObjectConfig> = {
     searchFields: INCIDENT_SEARCH_FIELDS,
     defaults: { status: 'investigating' },
   },
+  chat_channels: {
+    key: 'chat_channels',
+    noteParentType: 'chat_channel',
+    resource: 'chat-channels',
+    singular: 'Chat channel',
+    plural: 'Chat channels',
+    routeBase: '/chat/channels',
+    icon: MessagesSquare,
+    titleField: 'name',
+    subtitleFields: ['intake_mode', 'auth_mode'],
+    fields: CHAT_CHANNEL_FIELDS,
+    layout: CHAT_CHANNEL_LAYOUT,
+    listColumns: CHAT_CHANNEL_LIST_COLUMNS,
+    searchFields: CHAT_CHANNEL_SEARCH_FIELDS,
+    defaults: {
+      intake_mode: 'case',
+      auth_mode: 'none',
+      is_enabled: true,
+      collect_name: true,
+      collect_email: true,
+      auto_create_entity: true,
+      deal_stage: 'qualification',
+      deal_currency_code: 'USD',
+      case_priority: 'medium',
+      session_ttl_hours: 720,
+    },
+  },
   requests: {
     key: 'requests',
     noteParentType: 'request',
@@ -152,7 +201,11 @@ export const OBJECTS: Record<ObjectKey, ObjectConfig> = {
 
 export const OBJECT_LIST = Object.values(OBJECTS);
 
-/** Objects displayed in the primary navigation, in display order. */
+/**
+ * Objects displayed in the primary navigation, in display order. Chat channels
+ * are configuration rather than a record type people browse, so they are
+ * reached from the chat inbox instead of a top-level tab.
+ */
 export const NAV_OBJECT_ORDER: ObjectKey[] = ['entities', 'persons', 'deals', 'cases', 'incidents', 'requests'];
 
 /** Reverse lookup so a lookup field's target resource can be rendered as a link to its record page. */

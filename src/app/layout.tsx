@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 
-import { AppShell } from '@/components/app-shell';
 import { DensityProvider } from '@/components/density-provider';
 import { ThemeProvider } from '@/components/theme-provider';
 
@@ -17,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full font-sans">
         <DensityProvider />
         <ThemeProvider />
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );

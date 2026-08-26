@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { MAX_MESSAGE_LENGTH, MAX_SESSION_TTL_HOURS, MIN_SESSION_TTL_HOURS } from '@/lib/chat/config';
+import { channelKeySchema } from '@/lib/chat/keys';
+
 /* -------------------------------------------------------------------------- */
 /* Shared building blocks                                                      */
 /* -------------------------------------------------------------------------- */
@@ -290,3 +293,112 @@ export const noteCreateSchema = z.object({
 });
 
 export const noteUpdateSchema = z.object({ body: noteFields.body }).partial();
+
+/* -------------------------------------------------------------------------- */
+/* Chat                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A chat channel is one configured instance of the chat tool. Everything that
+ * differs between instances — prospecting vs support, anonymous vs verified,
+ * what the visitor is asked for — is a column here rather than a deployment.
+ */
+const chatChannelFields = {
+  name: z.string().min(1).max(255),
+  description: z.string().nullish(),
+  intake_mode: z.enum(['deal', 'case', 'none']),
+  auth_mode: z.enum(['none', 'optional', 'required']),
+  is_enabled: z.boolean(),
+  greeting: z.string().nullish(),
+  offline_message: z.string().nullish(),
+  collect_name: z.boolean(),
+  collect_email: z.boolean(),
+  auto_create_entity: z.boolean(),
+  default_assignee_user_id: uuid().nullish(),
+  deal_stage: z.enum(['qualification', 'discovery', 'proposal', 'negotiation', 'won', 'lost']),
+  deal_currency_code: z.string().length(3),
+  case_priority: z.enum(['low', 'medium', 'high', 'urgent']),
+  case_category: z.string().max(100).nullish(),
+  allowed_origins: z.string().max(2048).nullish(),
+  session_ttl_hours: z.number().int().min(MIN_SESSION_TTL_HOURS).max(MAX_SESSION_TTL_HOURS),
+};
+
+export const chatChannelCreateSchema = z.object({
+  ...sharedCreate,
+  ...chatChannelFields,
+  key: channelKeySchema,
+  intake_mode: chatChannelFields.intake_mode.default('case'),
+  auth_mode: chatChannelFields.auth_mode.default('none'),
+  is_enabled: chatChannelFields.is_enabled.default(true),
+  collect_name: chatChannelFields.collect_name.default(true),
+  collect_email: chatChannelFields.collect_email.default(true),
+  auto_create_entity: chatChannelFields.auto_create_entity.default(true),
+  deal_stage: chatChannelFields.deal_stage.default('qualification'),
+  deal_currency_code: chatChannelFields.deal_currency_code.default('USD'),
+  case_priority: chatChannelFields.case_priority.default('medium'),
+  session_ttl_hours: chatChannelFields.session_ttl_hours.default(720),
+});
+
+export const chatChannelUpdateSchema = z
+  .object({ ...sharedUpdate, ...chatChannelFields, key: channelKeySchema })
+  .partial();
+
+/* Chat contact ------------------------------------------------------------- */
+
+/** Visitors create themselves through the widget; the CRM side mainly re-links them. */
+const chatContactFields = {
+  person_id: uuid().nullish(),
+  entity_id: uuid().nullish(),
+  display_name: z.string().max(255).nullish(),
+  email: z.email().max(320).nullish(),
+};
+
+export const chatContactCreateSchema = z.object({
+  workspace_id: uuid(),
+  channel_id: uuid(),
+  ...chatContactFields,
+});
+
+export const chatContactUpdateSchema = z.object(chatContactFields).partial();
+
+/* Chat conversation -------------------------------------------------------- */
+
+const chatConversationFields = {
+  subject: z.string().min(1).max(500),
+  status: z.enum(['open', 'pending', 'closed']),
+  assigned_user_id: uuid().nullish(),
+  entity_id: uuid().nullish(),
+  person_id: uuid().nullish(),
+  deal_id: uuid().nullish(),
+  case_id: uuid().nullish(),
+  closed_at: ts().nullish(),
+  agent_read_at: ts().nullish(),
+};
+
+export const chatConversationCreateSchema = z.object({
+  workspace_id: uuid(),
+  channel_id: uuid(),
+  contact_id: uuid(),
+  ...chatConversationFields,
+  status: chatConversationFields.status.default('open'),
+});
+
+export const chatConversationUpdateSchema = z.object(chatConversationFields).partial();
+
+/* Chat message ------------------------------------------------------------- */
+
+/**
+ * Agents post through `POST /api/v1/chat-messages`, which also moves the
+ * conversation's activity timestamps; `author_type` is fixed to `user` there.
+ */
+export const chatMessageCreateSchema = z.object({
+  workspace_id: uuid(),
+  conversation_id: uuid(),
+  body: z.string().min(1).max(MAX_MESSAGE_LENGTH),
+  author_user_id: uuid().nullish(),
+  author_name: z.string().max(255).nullish(),
+  is_internal: z.boolean().default(false),
+});
+
+/** Messages are a record of what was said, so nothing about them is editable. */
+export const chatMessageUpdateSchema = z.object({}).strict();

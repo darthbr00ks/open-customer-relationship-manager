@@ -10,9 +10,15 @@ datasource db {
   provider = "postgresql"
 }
 
-/* -------------------------------------------------------------------------- */
-/* Enums                                                                       */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Enums
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum EntityType {
   company
@@ -151,54 +157,127 @@ enum NoteParentType {
   case
   incident
   request
+  chat_channel
+  chat_conversation
 
   @@map("note_parent_type_enum")
 }
 
 enum NoteKind {
-  /** Hand-written by a user. */
+  /**
+   * Hand-written by a user.
+   */
   note
-  /** Recorded automatically by the app, e.g. a stage change. */
+  /**
+   * Recorded automatically by the app, e.g. a stage change.
+   */
   system
 
   @@map("note_kind_enum")
 }
 
-/* -------------------------------------------------------------------------- */
-/* Models                                                                      */
-/* -------------------------------------------------------------------------- */
+enum ChatIntakeMode {
+  /**
+   * A new conversation opens a Deal — prospecting/sales channels.
+   */
+  deal
+  /**
+   * A new conversation opens a Case — support channels.
+   */
+  case
+  /**
+   * Conversation only; no CRM record is opened automatically.
+   */
+  none
+
+  @@map("chat_intake_mode_enum")
+}
+
+enum ChatAuthMode {
+  /**
+   * Anyone can chat; the visitor is only asked for whatever the channel collects.
+   */
+  none
+  /**
+   * Visitors may verify their email to keep one identity, but are not made to.
+   */
+  optional
+  /**
+   * A verified email is required before reading or writing any conversation.
+   */
+  required
+
+  @@map("chat_auth_mode_enum")
+}
+
+enum ChatConversationStatus {
+  open
+  pending
+  closed
+
+  @@map("chat_conversation_status_enum")
+}
+
+enum ChatAuthorType {
+  /**
+   * The customer on the other end of the widget.
+   */
+  contact
+  /**
+   * A CRM user answering from the inbox.
+   */
+  user
+  /**
+   * Written by the app, e.g. "Case CASE-1042 opened".
+   */
+  system
+
+  @@map("chat_author_type_enum")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Models
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 model Entity {
-  id                  String            @id @default(uuid()) @db.Uuid
-  workspace_id        String            @db.Uuid
-  owner_user_id       String?           @db.Uuid
-  created_at          DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime          @updatedAt @db.Timestamptz(6)
-  created_by_user_id  String?           @db.Uuid
-  updated_by_user_id  String?           @db.Uuid
-  archived_at         DateTime?         @db.Timestamptz(6)
-  name                String            @db.VarChar(255)
-  legal_name          String?           @db.VarChar(255)
-  entity_type         EntityType
-  relationship_stage  RelationshipStage @default(prospect)
-  description         String?           @db.Text
-  website_url         String?           @db.VarChar(2048)
-  primary_domain      String?           @db.VarChar(255)
-  primary_email       String?           @db.VarChar(320)
-  primary_phone       String?           @db.VarChar(50)
-  address_line_1      String?           @db.VarChar(255)
-  address_line_2      String?           @db.VarChar(255)
-  city                String?           @db.VarChar(100)
-  region              String?           @db.VarChar(100)
-  postal_code         String?           @db.VarChar(20)
-  country_code        String?           @db.VarChar(2)
-  notes               String?           @db.Text
+  id                 String            @id @default(uuid()) @db.Uuid
+  workspace_id       String            @db.Uuid
+  owner_user_id      String?           @db.Uuid
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?           @db.Uuid
+  updated_by_user_id String?           @db.Uuid
+  archived_at        DateTime?         @db.Timestamptz(6)
+  name               String            @db.VarChar(255)
+  legal_name         String?           @db.VarChar(255)
+  entity_type        EntityType
+  relationship_stage RelationshipStage @default(prospect)
+  description        String?           @db.Text
+  website_url        String?           @db.VarChar(2048)
+  primary_domain     String?           @db.VarChar(255)
+  primary_email      String?           @db.VarChar(320)
+  primary_phone      String?           @db.VarChar(50)
+  address_line_1     String?           @db.VarChar(255)
+  address_line_2     String?           @db.VarChar(255)
+  city               String?           @db.VarChar(100)
+  region             String?           @db.VarChar(100)
+  postal_code        String?           @db.VarChar(20)
+  country_code       String?           @db.VarChar(2)
+  notes              String?           @db.Text
 
-  entity_persons  EntityPerson[]
-  deals           Deal[]
-  cases           SupportCase[]
-  requests        FeatureRequest[]
-  incident_cases  IncidentCase[]
+  entity_persons     EntityPerson[]
+  deals              Deal[]
+  cases              SupportCase[]
+  requests           FeatureRequest[]
+  incident_cases     IncidentCase[]
+  chat_contacts      ChatContact[]
+  chat_conversations ChatConversation[]
 
   @@index([workspace_id, name], map: "ix_entity_workspace_name")
   @@index([workspace_id, relationship_stage], map: "ix_entity_workspace_stage")
@@ -209,26 +288,28 @@ model Entity {
 }
 
 model Person {
-  id                  String    @id @default(uuid()) @db.Uuid
-  workspace_id        String    @db.Uuid
-  owner_user_id       String?   @db.Uuid
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
-  created_by_user_id  String?   @db.Uuid
-  updated_by_user_id  String?   @db.Uuid
-  archived_at         DateTime? @db.Timestamptz(6)
-  first_name          String    @db.VarChar(100)
-  last_name           String?   @db.VarChar(100)
-  preferred_name      String?   @db.VarChar(100)
-  primary_email       String?   @db.VarChar(320)
-  primary_phone       String?   @db.VarChar(50)
-  linkedin_url        String?   @db.VarChar(2048)
-  description         String?   @db.Text
-  notes               String?   @db.Text
+  id                 String    @id @default(uuid()) @db.Uuid
+  workspace_id       String    @db.Uuid
+  owner_user_id      String?   @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?   @db.Uuid
+  updated_by_user_id String?   @db.Uuid
+  archived_at        DateTime? @db.Timestamptz(6)
+  first_name         String    @db.VarChar(100)
+  last_name          String?   @db.VarChar(100)
+  preferred_name     String?   @db.VarChar(100)
+  primary_email      String?   @db.VarChar(320)
+  primary_phone      String?   @db.VarChar(50)
+  linkedin_url       String?   @db.VarChar(2048)
+  description        String?   @db.Text
+  notes              String?   @db.Text
 
-  entity_persons EntityPerson[]
-  cases          SupportCase[]
-  requests       FeatureRequest[]
+  entity_persons     EntityPerson[]
+  cases              SupportCase[]
+  requests           FeatureRequest[]
+  chat_contacts      ChatContact[]
+  chat_conversations ChatConversation[]
 
   @@index([workspace_id, last_name], map: "ix_person_workspace_last_name")
   @@index([workspace_id, primary_email], map: "ix_person_workspace_email")
@@ -283,7 +364,8 @@ model Deal {
   lost_reason               String?   @db.Text
   notes                     String?   @db.Text
 
-  entity Entity @relation(fields: [entity_id], references: [id])
+  entity             Entity             @relation(fields: [entity_id], references: [id])
+  chat_conversations ChatConversation[]
 
   @@index([workspace_id, entity_id], map: "ix_deal_workspace_entity")
   @@index([workspace_id, stage], map: "ix_deal_workspace_stage")
@@ -314,9 +396,10 @@ model SupportCase {
   resolved_at           DateTime?    @db.Timestamptz(6)
   resolution            String?      @db.Text
 
-  entity             Entity?        @relation(fields: [entity_id], references: [id])
-  reported_by_person Person?        @relation(fields: [reported_by_person_id], references: [id])
+  entity             Entity?            @relation(fields: [entity_id], references: [id])
+  reported_by_person Person?            @relation(fields: [reported_by_person_id], references: [id])
   incident_cases     IncidentCase[]
+  chat_conversations ChatConversation[]
 
   @@unique([workspace_id, case_number], map: "uq_case_number")
   @@index([workspace_id, status], map: "ix_case_workspace_status")
@@ -410,7 +493,9 @@ model FeatureRequest {
   @@map("request")
 }
 
-/** A user-authored note or system event in a record's activity timeline. */
+/**
+ * A user-authored note or system event in a record's activity timeline.
+ */
 model Note {
   id                 String         @id @default(uuid()) @db.Uuid
   workspace_id       String         @db.Uuid
@@ -423,4 +508,249 @@ model Note {
 
   @@index([workspace_id, parent_type, parent_id], map: "ix_note_parent")
   @@map("note")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Chat
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * One deployment of the chat tool.
+ * A workspace can run as many channels as it has places to put a chat box —
+ * a pricing page, a support portal, a partner site — and each one decides on
+ * its own whether a conversation opens a Deal or a Case, and whether the
+ * visitor has to prove who they are first.
+ */
+model ChatChannel {
+  id                       String         @id @default(uuid()) @db.Uuid
+  workspace_id             String         @db.Uuid
+  owner_user_id            String?        @db.Uuid
+  created_at               DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime       @updatedAt @db.Timestamptz(6)
+  created_by_user_id       String?        @db.Uuid
+  updated_by_user_id       String?        @db.Uuid
+  archived_at              DateTime?      @db.Timestamptz(6)
+  name                     String         @db.VarChar(255)
+  /**
+   * Public identifier in widget URLs. Globally unique: the public API is not workspace-scoped.
+   */
+  key                      String         @unique(map: "uq_chat_channel_key") @db.VarChar(64)
+  description              String?        @db.Text
+  /**
+   * What a new conversation opens in the CRM.
+   */
+  intake_mode              ChatIntakeMode @default(case)
+  /**
+   * Whether the visitor must verify an email address first.
+   */
+  auth_mode                ChatAuthMode   @default(none)
+  /**
+   * A disabled channel still exists but turns visitors away.
+   */
+  is_enabled               Boolean        @default(true)
+  greeting                 String?        @db.Text
+  /**
+   * Shown when the channel is disabled.
+   */
+  offline_message          String?        @db.Text
+  /**
+   * Ask an unauthenticated visitor for a name / an email before they can start.
+   */
+  collect_name             Boolean        @default(true)
+  collect_email            Boolean        @default(true)
+  /**
+   * Match (or open) an Entity from the visitor's email domain.
+   */
+  auto_create_entity       Boolean        @default(true)
+  /**
+   * Owner stamped on conversations and on the Deal/Case they open.
+   */
+  default_assignee_user_id String?        @db.Uuid
+  /**
+   * Applied when `intake_mode` is `deal`.
+   */
+  deal_stage               DealStage      @default(qualification)
+  deal_currency_code       String         @default("USD") @db.VarChar(3)
+  /**
+   * Applied when `intake_mode` is `case`.
+   */
+  case_priority            CasePriority   @default(medium)
+  case_category            String?        @db.VarChar(100)
+  /**
+   * Comma-separated origins allowed to embed the widget; empty means any.
+   */
+  allowed_origins          String?        @db.VarChar(2048)
+  /**
+   * How long a visitor stays signed in on one device.
+   */
+  session_ttl_hours        Int            @default(720)
+
+  contacts      ChatContact[]
+  conversations ChatConversation[]
+  sessions      ChatSession[]
+  auth_codes    ChatAuthCode[]
+
+  @@index([workspace_id], map: "ix_chat_channel_workspace")
+  @@index([workspace_id, intake_mode], map: "ix_chat_channel_workspace_mode")
+  @@map("chat_channel")
+}
+
+/**
+ * The customer side of a channel: who a visitor is, as far as that channel
+ * knows. Kept separate from `Person` because a visitor may be anonymous, may
+ * never turn into a CRM contact, and belongs to exactly one channel.
+ */
+model ChatContact {
+  id           String    @id @default(uuid()) @db.Uuid
+  workspace_id String    @db.Uuid
+  channel_id   String    @db.Uuid
+  /**
+   * Set once the visitor is matched to (or creates) a CRM Person.
+   */
+  person_id    String?   @db.Uuid
+  entity_id    String?   @db.Uuid
+  email        String?   @db.VarChar(320)
+  display_name String?   @db.VarChar(255)
+  /**
+   * Set when the address was proved by an emailed code.
+   */
+  verified_at  DateTime? @db.Timestamptz(6)
+  last_seen_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+
+  channel       ChatChannel        @relation(fields: [channel_id], references: [id])
+  person        Person?            @relation(fields: [person_id], references: [id])
+  entity        Entity?            @relation(fields: [entity_id], references: [id])
+  conversations ChatConversation[]
+  sessions      ChatSession[]
+
+  // Postgres allows repeated NULLs in a unique index, so anonymous contacts
+  // (no email) are not constrained by this.
+  @@unique([channel_id, email], map: "uq_chat_contact_channel_email")
+  @@index([workspace_id], map: "ix_chat_contact_workspace")
+  @@map("chat_contact")
+}
+
+/**
+ * A visitor's bearer token for one browser. Only the hash is stored.
+ */
+model ChatSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  workspace_id     String    @db.Uuid
+  channel_id       String    @db.Uuid
+  contact_id       String    @db.Uuid
+  token_hash       String    @unique(map: "uq_chat_session_token") @db.VarChar(64)
+  /**
+   * False for a guest session on a channel that does not require authentication.
+   */
+  is_authenticated Boolean   @default(false)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at       DateTime  @db.Timestamptz(6)
+  last_used_at     DateTime? @db.Timestamptz(6)
+  revoked_at       DateTime? @db.Timestamptz(6)
+
+  channel ChatChannel @relation(fields: [channel_id], references: [id])
+  contact ChatContact @relation(fields: [contact_id], references: [id])
+
+  @@index([contact_id], map: "ix_chat_session_contact")
+  @@map("chat_session")
+}
+
+/**
+ * A single-use email verification code. Only the hash is stored.
+ */
+model ChatAuthCode {
+  id           String    @id @default(uuid()) @db.Uuid
+  workspace_id String    @db.Uuid
+  channel_id   String    @db.Uuid
+  email        String    @db.VarChar(320)
+  code_hash    String    @db.VarChar(64)
+  attempts     Int       @default(0)
+  expires_at   DateTime  @db.Timestamptz(6)
+  consumed_at  DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  channel ChatChannel @relation(fields: [channel_id], references: [id])
+
+  @@index([channel_id, email, created_at], map: "ix_chat_auth_code_lookup")
+  @@map("chat_auth_code")
+}
+
+/**
+ * One thread between a visitor and the workspace, plus what it opened in the CRM.
+ */
+model ChatConversation {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  workspace_id            String                 @db.Uuid
+  channel_id              String                 @db.Uuid
+  contact_id              String                 @db.Uuid
+  subject                 String                 @db.VarChar(500)
+  status                  ChatConversationStatus @default(open)
+  assigned_user_id        String?                @db.Uuid
+  /**
+   * The records intake opened or matched; which of deal/case is set follows the channel's intake_mode.
+   */
+  entity_id               String?                @db.Uuid
+  person_id               String?                @db.Uuid
+  deal_id                 String?                @db.Uuid
+  case_id                 String?                @db.Uuid
+  created_at              DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime               @updatedAt @db.Timestamptz(6)
+  last_message_at         DateTime               @default(now()) @db.Timestamptz(6)
+  last_contact_message_at DateTime?              @db.Timestamptz(6)
+  last_agent_message_at   DateTime?              @db.Timestamptz(6)
+  /**
+   * Drive the unread markers on each side without a per-message read table.
+   */
+  agent_read_at           DateTime?              @db.Timestamptz(6)
+  contact_read_at         DateTime?              @db.Timestamptz(6)
+  closed_at               DateTime?              @db.Timestamptz(6)
+
+  channel  ChatChannel   @relation(fields: [channel_id], references: [id])
+  contact  ChatContact   @relation(fields: [contact_id], references: [id])
+  entity   Entity?       @relation(fields: [entity_id], references: [id])
+  person   Person?       @relation(fields: [person_id], references: [id])
+  deal     Deal?         @relation(fields: [deal_id], references: [id])
+  case     SupportCase?  @relation(fields: [case_id], references: [id])
+  messages ChatMessage[]
+
+  @@index([workspace_id, status, last_message_at], map: "ix_chat_conversation_workspace_status")
+  @@index([workspace_id, channel_id], map: "ix_chat_conversation_channel")
+  @@index([contact_id], map: "ix_chat_conversation_contact")
+  @@map("chat_conversation")
+}
+
+model ChatMessage {
+  id                String         @id @default(uuid()) @db.Uuid
+  workspace_id      String         @db.Uuid
+  conversation_id   String         @db.Uuid
+  author_type       ChatAuthorType
+  /**
+   * Exactly one of these is set, according to `author_type`.
+   */
+  author_user_id    String?        @db.Uuid
+  author_contact_id String?        @db.Uuid
+  /**
+   * Display name captured at send time so the thread reads correctly later.
+   */
+  author_name       String?        @db.VarChar(255)
+  body              String         @db.Text
+  /**
+   * Visible in the agent inbox only — never returned by the public API.
+   */
+  is_internal       Boolean        @default(false)
+  created_at        DateTime       @default(now()) @db.Timestamptz(6)
+
+  conversation ChatConversation @relation(fields: [conversation_id], references: [id])
+
+  @@index([conversation_id, created_at], map: "ix_chat_message_conversation")
+  @@index([workspace_id], map: "ix_chat_message_workspace")
+  @@map("chat_message")
 }

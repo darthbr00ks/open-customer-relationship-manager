@@ -21,6 +21,16 @@ export type JobPayloads = {
   'pipeline-report': {
     workspace_id: string;
   };
+  /** Deliver a chat channel's email verification code to a visitor. */
+  'chat-auth-code': {
+    workspace_id: string;
+    channel_id: string;
+    channel_name: string;
+    email: string;
+    code: string;
+    /** ISO-8601; shown to the visitor so they know how long they have. */
+    expires_at: string;
+  };
 };
 
 export type JobName = keyof JobPayloads;
