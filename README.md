@@ -20,6 +20,10 @@ Six primary objects plus two junctions:
 | **IncidentCase** | Junction linking a case and an entity to a shared incident. |
 | **Request** | A feature or improvement suggestion from a customer or entity. |
 | **Note** | A timeline entry (hand-written or system-generated) on any of the above — powers each record's Activity/Notes tabs. |
+| **ChatChannel** | One configured instance of the chat tool: what it opens (deal/case/nothing) and whether visitors must verify their email. |
+| **ChatContact** | Who a visitor is, as far as one channel knows — optionally linked to a Person and an Entity. |
+| **ChatConversation** | A thread between a visitor and the workspace, plus the records it opened. |
+| **ChatMessage** | One message in a thread, from the visitor, a user, or the app itself. |
 
 All records are scoped by `workspace_id`. Primary objects support soft-deletion
 via `archived_at`; the junctions do not.
@@ -28,8 +32,10 @@ via `archived_at`; the junctions do not.
 
 ```
 Browser ──▶ Next.js App Router
-              ├── /app/*             UI (shadcn/ui components, Zustand store)
-              └── /app/api/v1/*      REST API (Zod validation, Prisma)
+              ├── /app/(crm)/*       UI (shadcn/ui components, Zustand store)
+              ├── /app/(public)/*    Customer-facing chat widget
+              ├── /app/api/v1/*      REST API (Zod validation, Prisma)
+              └── /app/api/chat/*    Public chat API (channel key + visitor session)
                                           │
                         ┌─────────────────┴─────────────────┐
                         ▼                                   ▼
@@ -77,8 +83,115 @@ list and a layout, not a new page.
   palette with much heavier borders for maximum legibility.
 - **Create/edit forms** — generated from the same per-object layout, in a
   dialog.
+- **Chat inbox** (`src/components/chat/agent-inbox.tsx`) — the one screen that
+  is not metadata-driven, because a conversation is a stream rather than a
+  record: a filterable list, the thread, and a composer. Chat channels *are*
+  metadata-driven like every other object (`src/lib/schema/chat-channel.ts`).
 
 There is no admin UI to build layouts by hand yet — see "Known gaps."
+
+## Chat
+
+Customers message the workspace from a chat widget; users answer from an inbox
+inside the CRM. A workspace can run **as many channels as it has places to put
+a chat box**, and each channel is configured on its own — the two questions
+that matter most are answered per channel, not per deployment:
+
+| Setting | Options | What it decides |
+|---|---|---|
+| `intake_mode` | `deal` · `case` · `none` | What a new conversation opens: a Deal for prospecting, a Case for support, or nothing at all. |
+| `auth_mode` | `none` · `optional` · `required` | Whether the visitor must prove an email address with a one-time code before they can chat. |
+
+The rest of a channel is configuration too: greeting and offline message,
+whether a guest is asked for a name and an email, whether intake may open an
+Entity from the visitor's email domain, the stage/priority/category and default
+assignee stamped on whatever it opens, which origins may embed the widget, and
+how long a visitor stays signed in.
+
+So one workspace can run a no-sign-in sales box on its marketing site that
+opens a qualification-stage Deal, and a sign-in-required support desk that
+opens a medium-priority Case — from the same code, with no branching.
+
+### Intake
+
+Before opening anything, intake works out *who* is talking, matching what the
+workspace already has rather than duplicating it:
+
+1. **Person** — matched on email, otherwise created (name split from what the
+   visitor gave, else their email's local part).
+2. **Entity** — an organization the person is already affiliated with, else one
+   whose `primary_domain` matches their email domain, else a new one when
+   `auto_create_entity` is on. Consumer mailboxes (gmail.com and friends) never
+   name an Entity; on a `deal` channel, where a Deal cannot exist without one,
+   a `household` Entity stands for the person instead.
+3. **Affiliation** — the person is added to the entity's contact list if they
+   were not on it already.
+
+Then the Deal or Case is opened, a system note on it records which channel it
+came from, and the conversation stores every id it touched. Opening a
+conversation is one transaction: a workspace never ends up with a Case whose
+thread is missing, or the reverse.
+
+### Authentication
+
+`auth_mode: 'required'` means a visitor must verify an email address before
+reading or writing anything on that channel — which is also what lets them pick
+up their history from another device. Verification is a six-digit code:
+
+- stored only as a SHA-256 hash, salted with the channel id;
+- single use, valid 10 minutes, 5 wrong guesses and it is burned;
+- rate limited to 5 codes per address per channel per 15 minutes.
+
+A successful verification issues a **session token** (256 bits, stored hashed,
+sent as `Authorization: Bearer …`). Channels with `auth_mode: 'none'` or
+`'optional'` also issue guest tokens, so every conversation endpoint works the
+same way whichever mode a channel is in.
+
+> **No mail provider is wired up.** Delivery is a queued job
+> (`src/worker/jobs/deliver-chat-code.ts`) that logs the code; replacing that
+> one function is all a real deployment needs. Outside production the code is
+> also returned as `debug_code` so the flow is usable locally — set
+> `CHAT_RETURN_AUTH_CODE=false` to turn that off.
+
+### Using it
+
+- **Inbox** — `/chat`: every channel's conversations, filterable by channel and
+  status, with the thread, a reply box, an internal-note toggle (never shown to
+  the customer), status and assignment, and links to the Deal/Case/Entity the
+  conversation opened.
+- **Channels** — `/chat/channels`: the same list/record/form treatment as every
+  other object, plus the embed snippet for each channel.
+- **Widget** — `/chat/widget/<key>`: what the customer sees. It carries none of
+  the CRM's chrome, so it can be linked directly or dropped into an iframe:
+
+  ```html
+  <iframe src="https://your-open-rm/chat/widget/support"
+          title="Chat" width="400" height="600" style="border:0"></iframe>
+  ```
+
+`npm run db:seed` creates two channels to look at: `sales` (deal, no sign-in)
+and `support` (case, sign-in required).
+
+### Public API
+
+Endpoints under `/api/chat/<channel_key>` are the customer's half. They are not
+workspace-scoped — the channel key identifies the workspace — and every one of
+them answers CORS preflight against the channel's allowed origins.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/chat/{key}` | Public channel config: name, greeting, what it collects, whether it requires sign-in |
+| `POST /api/chat/{key}/sessions` | Start a guest session (401 on a `required` channel) |
+| `GET /api/chat/{key}/sessions` | Who the caller's token belongs to |
+| `POST /api/chat/{key}/auth/request-code` | Email a verification code |
+| `POST /api/chat/{key}/auth/verify` | Exchange a code for an authenticated session |
+| `GET·POST /api/chat/{key}/conversations` | List the caller's threads · open one (runs intake) |
+| `GET·PATCH /api/chat/{key}/conversations/{id}` | Read one · close it |
+| `GET·POST /api/chat/{key}/conversations/{id}/messages` | Read (`?after=<ISO>` for polling) · send |
+
+A visitor only ever sees their own threads, on the one channel their token was
+issued for, and internal notes are filtered out server-side.
+
 
 ## Getting started
 
@@ -144,6 +257,10 @@ parameter (on create, `workspace_id` is part of the body).
 | Incident-Case links | `/api/v1/incident-cases` |
 | Requests | `/api/v1/requests` |
 | Notes | `/api/v1/notes` |
+| Chat channels | `/api/v1/chat-channels` |
+| Chat contacts | `/api/v1/chat-contacts` |
+| Chat conversations | `/api/v1/chat-conversations` |
+| Chat messages | `/api/v1/chat-messages` |
 
 Each resource supports:
 
@@ -160,8 +277,18 @@ Each resource supports:
 | `include_archived` | `false` | Primary objects only. |
 
 `entity-persons` also filters on `entity_id` / `person_id`; `incident-cases` on
-`incident_id` / `case_id`; `notes` on `parent_id`. Results are ordered
-newest-first with `id` as a tiebreak, so paging is stable.
+`incident_id` / `case_id`; `notes` on `parent_id`; `chat-conversations` on
+`channel_id` / `contact_id` / `deal_id` / `case_id`; `chat-messages` on
+`conversation_id`. Results are ordered newest-first with `id` as a tiebreak, so
+paging is stable.
+
+Two chat endpoints are not the generic ones. `POST /api/v1/chat-messages`
+posts a reply from the CRM side: it also moves the conversation's activity
+timestamps, always writes `author_type: "user"` (nothing can forge a message
+from the customer), and takes `is_internal` for a note colleagues can see but
+the visitor cannot. `POST /api/v1/chat-conversations/{id}/read` clears a
+thread's unread marker in the inbox. Chat messages are a record of what was
+said, so they cannot be edited or deleted.
 
 ### Jobs and reports
 
@@ -229,11 +356,18 @@ The test database needs the same schema as the dev one — run
 
 ## Known gaps
 
-- **No authentication or authorization.** `workspace_id` is supplied by the
-  caller and is not a security boundary. Do not expose this service publicly
-  as-is. The "current user" in the UI (for owner assignment and activity
-  attribution) is a name typed into the user menu, stored per-browser —
-  not a real identity.
+- **No authentication or authorization for CRM users.** `workspace_id` is
+  supplied by the caller and is not a security boundary. Do not expose this
+  service publicly as-is. The "current user" in the UI (for owner assignment and
+  activity attribution) is a name typed into the user menu, stored per-browser —
+  not a real identity. Chat's `auth_mode` authenticates *customers* on a
+  channel, which is a different question: it decides who may read and write one
+  visitor's threads, not who may use the CRM.
+- **Chat verification codes are not actually emailed.** Delivery is a queued job
+  that logs them (see "Chat"), and outside production the code comes back in the
+  API response.
+- No rate limiting on message sending, and no attachments in chat — a message is
+  text, capped at 4,000 characters.
 - List/related-list filtering, search, and sort are client-side over the
   loaded page (up to 200 rows); server-side search is not implemented.
 - Saved list views are stored per-browser (`localStorage`), not shared across

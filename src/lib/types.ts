@@ -144,6 +144,76 @@ export type Note = {
   created_by_user_id: string | null;
 };
 
+export type ChatChannel = SharedFields & {
+  name: string;
+  key: string;
+  description: string | null;
+  intake_mode: 'deal' | 'case' | 'none';
+  auth_mode: 'none' | 'optional' | 'required';
+  is_enabled: boolean;
+  greeting: string | null;
+  offline_message: string | null;
+  collect_name: boolean;
+  collect_email: boolean;
+  auto_create_entity: boolean;
+  default_assignee_user_id: string | null;
+  deal_stage: string;
+  deal_currency_code: string;
+  case_priority: string;
+  case_category: string | null;
+  allowed_origins: string | null;
+  session_ttl_hours: number;
+};
+
+export type ChatContact = {
+  id: string;
+  workspace_id: string;
+  channel_id: string;
+  person_id: string | null;
+  entity_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  verified_at: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatConversation = {
+  id: string;
+  workspace_id: string;
+  channel_id: string;
+  contact_id: string;
+  subject: string;
+  status: 'open' | 'pending' | 'closed';
+  assigned_user_id: string | null;
+  entity_id: string | null;
+  person_id: string | null;
+  deal_id: string | null;
+  case_id: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+  last_contact_message_at: string | null;
+  last_agent_message_at: string | null;
+  agent_read_at: string | null;
+  contact_read_at: string | null;
+  closed_at: string | null;
+};
+
+export type ChatMessage = {
+  id: string;
+  workspace_id: string;
+  conversation_id: string;
+  author_type: 'contact' | 'user' | 'system';
+  author_user_id: string | null;
+  author_contact_id: string | null;
+  author_name: string | null;
+  body: string;
+  is_internal: boolean;
+  created_at: string;
+};
+
 export type PipelineReport = {
   workspace_id: string;
   generated_at: string;
@@ -218,3 +288,10 @@ export const REQUEST_STATUSES = [
   'declined',
 ] as const;
 export const REQUEST_PRIORITIES = ['low', 'medium', 'high'] as const;
+
+/** What a chat channel opens in the CRM when a conversation starts. */
+export const CHAT_INTAKE_MODES = ['deal', 'case', 'none'] as const;
+/** Whether a visitor must prove an email address before they can chat. */
+export const CHAT_AUTH_MODES = ['none', 'optional', 'required'] as const;
+export const CHAT_CONVERSATION_STATUSES = ['open', 'pending', 'closed'] as const;
+export const CHAT_AUTHOR_TYPES = ['contact', 'user', 'system'] as const;

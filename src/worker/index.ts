@@ -4,6 +4,7 @@ import { Worker, type Job } from 'bullmq';
 
 import { QUEUE_NAME, queueConnection, type JobPayloads } from '@/lib/queue';
 
+import { deliverChatCode } from './jobs/deliver-chat-code';
 import { importEntities } from './jobs/import-entities';
 import { buildPipelineReport } from './jobs/pipeline-report';
 
@@ -24,6 +25,8 @@ export function createWorker(): Worker {
           );
         case 'pipeline-report':
           return buildPipelineReport(job.data as JobPayloads['pipeline-report']);
+        case 'chat-auth-code':
+          return deliverChatCode(job.data as JobPayloads['chat-auth-code']);
         default:
           throw new Error(`Unknown job: ${job.name}`);
       }

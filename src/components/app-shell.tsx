@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home } from 'lucide-react';
+import { Home, MessagesSquare } from 'lucide-react';
 
 import { CommandPalette } from '@/components/command-palette';
 import { CreateMenu } from '@/components/create-menu';
@@ -47,6 +47,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </NavLink>
               );
             })}
+            {/* Chat is a workspace-wide inbox rather than one more record list, so it
+                sits at the end of the tabs instead of in `NAV_OBJECT_ORDER`. */}
+            <NavLink href="/chat" active={pathname.startsWith('/chat')}>
+              <MessagesSquare className="size-4" /> Chat
+            </NavLink>
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -70,7 +75,9 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
     <Link
       href={href}
       className={cn(
-        'flex items-center gap-1.5 rounded-md px-3 py-1.5 whitespace-nowrap transition-colors',
+        // `shrink-0` keeps a tab's label intact once the row is full: the nav
+        // scrolls instead of squeezing the last tabs down to their icons.
+        'flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 whitespace-nowrap transition-colors',
         active
           ? 'bg-accent text-accent-foreground font-medium'
           : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
