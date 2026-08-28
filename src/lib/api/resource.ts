@@ -74,8 +74,11 @@ type Row = Record<string, unknown>;
  * Prisma returns `Decimal` for money and `Date` for both timestamp and date
  * columns; date-only columns are emitted as `YYYY-MM-DD` rather than a full
  * timestamp so the API keeps the shape clients already expect.
+ *
+ * Exported so routes that do more than generic CRUD — accepting a quote,
+ * amending a subscription — render their rows identically.
  */
-function serialize(row: Row, dateOnlyFields: readonly string[]): Row {
+export function serializeRow(row: Row, dateOnlyFields: readonly string[] = []): Row {
   const out: Row = {};
   for (const [key, value] of Object.entries(row)) {
     if (value instanceof Date) {
@@ -125,6 +128,11 @@ export type ResourceConfig = {
   updateSchema: z.ZodType;
   /** Column that orders list results. */
   orderBy: string;
+  /**
+   * Direction for `orderBy`. Records default to newest-first; the lines of a
+   * document read in the order they were arranged, so they ask for `asc`.
+   */
+  orderDirection?: 'asc' | 'desc';
   /** Whether the resource supports archiving. */
   archivable: boolean;
   /** Exact-match list filters, e.g. `{ entity_id: true }`. */
@@ -139,7 +147,15 @@ export type ResourceConfig = {
 
 /** GET (list) and POST (create) for `/api/v1/<resource>`. */
 export function collectionHandlers(config: ResourceConfig) {
-  const { delegate, createSchema, orderBy, archivable, filters = [], dateOnlyFields = [] } = config;
+  const {
+    delegate,
+    createSchema,
+    orderBy,
+    orderDirection = 'desc',
+    archivable,
+    filters = [],
+    dateOnlyFields = [],
+  } = config;
 
   return {
     async GET(request: Request) {
@@ -161,12 +177,12 @@ export function collectionHandlers(config: ResourceConfig) {
         const rows = await delegate.findMany({
           where,
           // `id` breaks ties so paging stays stable across pages.
-          orderBy: [{ [orderBy]: 'desc' }, { id: 'asc' }],
+          orderBy: [{ [orderBy]: orderDirection }, { id: 'asc' }],
           take: query.limit,
           skip: query.offset,
         });
 
-        return NextResponse.json(rows.map((row) => serialize(row, dateOnlyFields)));
+        return NextResponse.json(rows.map((row) => serializeRow(row, dateOnlyFields)));
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -177,7 +193,7 @@ export function collectionHandlers(config: ResourceConfig) {
         const body = (await request.json().catch(() => ({}))) as Row;
         const data = createSchema.parse(body) as Row;
         const row = await delegate.create({ data });
-        return NextResponse.json(serialize(row, dateOnlyFields), { status: 201 });
+        return NextResponse.json(serializeRow(row, dateOnlyFields), { status: 201 });
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -207,7 +223,7 @@ export function itemHandlers(config: ResourceConfig) {
         if (!row) {
           return fail(404, `${label} not found`);
         }
-        return NextResponse.json(serialize(row, dateOnlyFields));
+        return NextResponse.json(serializeRow(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -229,7 +245,7 @@ export function itemHandlers(config: ResourceConfig) {
         const data = onlyProvided(updateSchema.parse(body) as Row, body);
 
         const row = await delegate.update({ where: { id }, data });
-        return NextResponse.json(serialize(row, dateOnlyFields));
+        return NextResponse.json(serializeRow(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -253,7 +269,7 @@ export function itemHandlers(config: ResourceConfig) {
           create: { id: parsedId, ...createData },
           update: updateData,
         });
-        return NextResponse.json(serialize(row, dateOnlyFields));
+        return NextResponse.json(serializeRow(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -272,7 +288,7 @@ export function itemHandlers(config: ResourceConfig) {
         }
 
         const row = await delegate.delete({ where: { id, workspace_id } });
-        return NextResponse.json(serialize(row, dateOnlyFields));
+        return NextResponse.json(serializeRow(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -303,7 +319,7 @@ export function archiveHandler(config: ResourceConfig) {
           where: { id },
           data: { archived_at: new Date() },
         });
-        return NextResponse.json(serialize(row, dateOnlyFields));
+        return NextResponse.json(serializeRow(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);
       }

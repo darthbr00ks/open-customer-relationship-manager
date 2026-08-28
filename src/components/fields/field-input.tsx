@@ -61,7 +61,7 @@ export function FieldInput({
           <SelectContent>
             {(field.options ?? []).map((option) => (
               <SelectItem key={option} value={option}>
-                {formatLabel(option)}
+                {field.optionLabel ? field.optionLabel(option) : formatLabel(option)}
               </SelectItem>
             ))}
           </SelectContent>

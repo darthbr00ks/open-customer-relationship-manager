@@ -4,8 +4,32 @@ import { prisma } from '@/lib/prisma';
 
 export const uuid = () => randomUUID();
 
-/** Child rows first: the junctions and chat tables carry FKs back to entity/person/case. */
+/** Child rows first: the junctions, chat, and selling tables carry FKs back to entity/person/case/deal. */
 export async function resetDatabase() {
+  // Selling, deepest first: usage hangs off entitlements, which hang off
+  // subscriptions, which point back at order lines, orders, and the catalog.
+  await prisma.usageRecord.deleteMany();
+  await prisma.entitlement.deleteMany();
+  await prisma.subscriptionAmendment.deleteMany();
+  await prisma.subscription.deleteMany();
+  await prisma.serviceMilestone.deleteMany();
+  await prisma.serviceDelivery.deleteMany();
+  await prisma.shipmentLine.deleteMany();
+  await prisma.shipment.deleteMany();
+  await prisma.orderLine.deleteMany();
+  await prisma.order.deleteMany();
+  await prisma.quoteLine.deleteMany();
+  await prisma.quote.deleteMany();
+  await prisma.dealLine.deleteMany();
+  await prisma.bundleComponent.deleteMany();
+  await prisma.priceTier.deleteMany();
+  await prisma.price.deleteMany();
+  await prisma.priceBook.deleteMany();
+  await prisma.inventoryItem.deleteMany();
+  await prisma.serviceDefinition.deleteMany();
+  await prisma.offering.deleteMany();
+  await prisma.product.deleteMany();
+
   await prisma.chatMessage.deleteMany();
   await prisma.chatSession.deleteMany();
   await prisma.chatAuthCode.deleteMany();

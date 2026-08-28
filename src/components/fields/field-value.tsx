@@ -36,7 +36,7 @@ export function FieldValue({
   switch (field.type) {
     case 'select': {
       const str = String(value);
-      const label = formatLabel(str);
+      const label = field.optionLabel ? field.optionLabel(str) : formatLabel(str);
       return field.badgeTone ? (
         <Badge variant={field.badgeTone(str)}>{label}</Badge>
       ) : (

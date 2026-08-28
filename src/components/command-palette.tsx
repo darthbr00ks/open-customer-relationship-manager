@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useCachedList } from '@/lib/data-cache';
-import { OBJECTS, titleOf } from '@/lib/objects';
+import { OBJECTS, titleOf, type ObjectKey } from '@/lib/objects';
 
 /**
  * Global search across every object. There is no
@@ -45,7 +45,29 @@ export function CommandPalette({ workspaceId }: { workspaceId: string | null }) 
   const incidents = useCachedList<Record<string, unknown>>('incidents', workspaceId);
   const requests = useCachedList<Record<string, unknown>>('requests', workspaceId);
   const chat_channels = useCachedList<Record<string, unknown>>('chat-channels', workspaceId);
-  const byResource = { entities, persons, deals, cases, incidents, requests, chat_channels };
+  const products = useCachedList<Record<string, unknown>>('products', workspaceId);
+  const offerings = useCachedList<Record<string, unknown>>('offerings', workspaceId);
+  const quotes = useCachedList<Record<string, unknown>>('quotes', workspaceId);
+  const orders = useCachedList<Record<string, unknown>>('orders', workspaceId);
+  const subscriptions = useCachedList<Record<string, unknown>>('subscriptions', workspaceId);
+  const service_deliveries = useCachedList<Record<string, unknown>>('service-deliveries', workspaceId);
+  // Keyed by `ObjectKey`, so a newly registered object is a compile error here
+  // until it is searchable too.
+  const byResource: Record<ObjectKey, { rows: Record<string, unknown>[] }> = {
+    entities,
+    persons,
+    deals,
+    cases,
+    incidents,
+    requests,
+    chat_channels,
+    products,
+    offerings,
+    quotes,
+    orders,
+    subscriptions,
+    service_deliveries,
+  };
 
   const q = query.trim().toLowerCase();
   const groups = q.length === 0
@@ -76,7 +98,7 @@ export function CommandPalette({ workspaceId }: { workspaceId: string | null }) 
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search entities, people, deals, cases…"
+              placeholder="Search entities, people, deals, quotes, products…"
               className="border-none px-0 shadow-none focus-visible:ring-0"
             />
           </div>

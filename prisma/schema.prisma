@@ -159,6 +159,12 @@ enum NoteParentType {
   request
   chat_channel
   chat_conversation
+  product
+  offering
+  quote
+  order
+  subscription
+  service_delivery
 
   @@map("note_parent_type_enum")
 }
@@ -236,6 +242,216 @@ enum ChatAuthorType {
 }
 
 /**
+ * Selling
+ * Three separate questions — what you sell (Product/Offering), how you charge
+ * for it (Price), and how you deliver it (fulfillment, service delivery,
+ * subscription) — so a laptop, a consulting engagement, and a monthly plan can
+ * sit on one Quote and still behave differently downstream.
+ */
+
+enum ProductStatus {
+  draft
+  active
+  retired
+  archived
+
+  @@map("product_status_enum")
+}
+
+/**
+ * What an Offering fundamentally is, which decides what its Order Line turns
+ * into: a Shipment, a Service Delivery, a Subscription, or several of those.
+ */
+enum OfferingType {
+  good
+  service
+  subscription
+  bundle
+
+  @@map("offering_type_enum")
+}
+
+enum FulfillmentPolicy {
+  shipping
+  digital_activation
+  scheduled_work
+  none
+
+  @@map("fulfillment_policy_enum")
+}
+
+/**
+ * How often a charge happens. One Offering may carry several Prices with
+ * different charge types — a setup fee, a monthly subscription, and usage
+ * overage are three Prices on one Offering, not three products.
+ */
+enum ChargeType {
+  one_time
+  recurring
+  usage
+
+  @@map("charge_type_enum")
+}
+
+/**
+ * How a quantity turns into money.
+ * - `flat`: one amount regardless of quantity.
+ * - `per_unit`: unit_amount x quantity.
+ * - `tiered`/`graduated`: each tier's units are charged at that tier's rate.
+ * - `volume`: the whole quantity is charged at the rate of the tier it lands in.
+ */
+enum PricingModel {
+  flat
+  per_unit
+  tiered
+  volume
+  graduated
+
+  @@map("pricing_model_enum")
+}
+
+enum BillingPeriod {
+  day
+  week
+  month
+  quarter
+  year
+
+  @@map("billing_period_enum")
+}
+
+enum InventoryStatus {
+  available
+  reserved
+  in_transit
+  quarantine
+  damaged
+
+  @@map("inventory_status_enum")
+}
+
+enum ServiceScope {
+  fixed
+  flexible
+
+  @@map("service_scope_enum")
+}
+
+enum QuoteStatus {
+  draft
+  sent
+  accepted
+  declined
+  expired
+
+  @@map("quote_status_enum")
+}
+
+/**
+ * Where an Order is in its own lifecycle. Deliberately independent of
+ * `FulfillmentStatus` and `BillingStatus`: an order can be paid but not
+ * shipped, or shipped but not invoiced.
+ */
+enum OrderStatus {
+  draft
+  open
+  completed
+  canceled
+
+  @@map("order_status_enum")
+}
+
+enum FulfillmentStatus {
+  not_started
+  in_progress
+  partially_fulfilled
+  fulfilled
+  returned
+  canceled
+
+  @@map("fulfillment_status_enum")
+}
+
+enum BillingStatus {
+  not_invoiced
+  invoiced
+  partially_paid
+  paid
+  refunded
+
+  @@map("billing_status_enum")
+}
+
+enum ShipmentStatus {
+  pending
+  packed
+  shipped
+  in_transit
+  delivered
+  returned
+  canceled
+
+  @@map("shipment_status_enum")
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  paused
+  past_due
+  canceled
+  expired
+
+  @@map("subscription_status_enum")
+}
+
+/**
+ * What a subscription amendment did. Amendments are append-only: the
+ * subscription carries the current state, the amendment carries the change.
+ */
+enum AmendmentType {
+  quantity_change
+  plan_change
+  price_change
+  billing_frequency_change
+  renewal
+  pause
+  resume
+  cancel
+
+  @@map("amendment_type_enum")
+}
+
+enum ServiceDeliveryStatus {
+  not_started
+  scheduled
+  in_progress
+  blocked
+  completed
+  accepted
+  canceled
+
+  @@map("service_delivery_status_enum")
+}
+
+enum MilestoneStatus {
+  pending
+  in_progress
+  completed
+  accepted
+  canceled
+
+  @@map("milestone_status_enum")
+}
+
+enum DiscountType {
+  percentage
+  fixed_amount
+
+  @@map("discount_type_enum")
+}
+
+/**
  * --------------------------------------------------------------------------
  */
 /**
@@ -278,6 +494,10 @@ model Entity {
   incident_cases     IncidentCase[]
   chat_contacts      ChatContact[]
   chat_conversations ChatConversation[]
+  quotes             Quote[]
+  orders             Order[]
+  subscriptions      Subscription[]
+  service_deliveries ServiceDelivery[]
 
   @@index([workspace_id, name], map: "ix_entity_workspace_name")
   @@index([workspace_id, relationship_stage], map: "ix_entity_workspace_stage")
@@ -366,6 +586,8 @@ model Deal {
 
   entity             Entity             @relation(fields: [entity_id], references: [id])
   chat_conversations ChatConversation[]
+  lines              DealLine[]
+  quotes             Quote[]
 
   @@index([workspace_id, entity_id], map: "ix_deal_workspace_entity")
   @@index([workspace_id, stage], map: "ix_deal_workspace_stage")
@@ -753,4 +975,983 @@ model ChatMessage {
   @@index([conversation_id, created_at], map: "ix_chat_message_conversation")
   @@index([workspace_id], map: "ix_chat_message_workspace")
   @@map("chat_message")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Selling — catalog
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * The general thing the company sells: "Premium Support", "Commercial
+ * Refrigerator", "Relationship Management Platform".
+ * A Product deliberately carries no price. The same product may be packaged
+ * several ways, in several currencies, on several contract terms — that lives
+ * on its Offerings and their Prices.
+ */
+model Product {
+  id                 String        @id @default(uuid()) @db.Uuid
+  workspace_id       String        @db.Uuid
+  owner_user_id      String?       @db.Uuid
+  created_at         DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime      @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?       @db.Uuid
+  updated_by_user_id String?       @db.Uuid
+  archived_at        DateTime?     @db.Timestamptz(6)
+  name               String        @db.VarChar(255)
+  description        String?       @db.Text
+  /**
+   * Hardware, consulting, software, training — free text so a workspace can
+   * use its own catalog vocabulary.
+   */
+  category           String?       @db.VarChar(100)
+  status             ProductStatus @default(draft)
+  /**
+   * Feeds tax determination; the tax engine itself is out of scope.
+   */
+  tax_category       String?       @db.VarChar(100)
+  notes              String?       @db.Text
+
+  offerings Offering[]
+
+  @@index([workspace_id, name], map: "ix_product_workspace_name")
+  @@index([workspace_id, status], map: "ix_product_workspace_status")
+  @@index([workspace_id, category], map: "ix_product_workspace_category")
+  @@map("product")
+}
+
+/**
+ * The exact configuration someone can buy — the SKU. "Professional Plan billed
+ * annually" and "Enterprise Plan billed monthly" are two Offerings of one
+ * Product.
+ * Inventory, bundle membership, and fulfillment all hang off the Offering
+ * rather than the Product: a large blue shirt and a medium red one are the same
+ * Product but different stock.
+ */
+model Offering {
+  id                 String            @id @default(uuid()) @db.Uuid
+  workspace_id       String            @db.Uuid
+  owner_user_id      String?           @db.Uuid
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?           @db.Uuid
+  updated_by_user_id String?           @db.Uuid
+  archived_at        DateTime?         @db.Timestamptz(6)
+  product_id         String            @db.Uuid
+  /**
+   * Human-readable catalog code, unique within the workspace.
+   */
+  sku                String            @db.VarChar(64)
+  name               String            @db.VarChar(255)
+  description        String?           @db.Text
+  offering_type      OfferingType
+  /**
+   * Each, hour, day, user, gigabyte, license — arbitrary, because quantity
+   * means something different for every kind of thing sold.
+   */
+  unit_of_measure    String            @default("each") @db.VarChar(50)
+  fulfillment_policy FulfillmentPolicy @default(none)
+  /**
+   * When this configuration may be sold. Outside the window it stays readable
+   * so historical transactions still resolve.
+   */
+  active_from        DateTime?         @db.Date
+  active_until       DateTime?         @db.Date
+  /**
+   * Uncommon specifications only — size, color, voltage. Anything priced,
+   * counted, billed, or searched belongs in a typed column instead.
+   */
+  attributes         Json?             @db.JsonB
+  notes              String?           @db.Text
+
+  product            Product            @relation(fields: [product_id], references: [id])
+  prices             Price[]
+  service_definition ServiceDefinition?
+  inventory_items    InventoryItem[]
+  bundle_components  BundleComponent[]  @relation("bundle_parent")
+  included_in        BundleComponent[]  @relation("bundle_child")
+  dealLines          DealLine[]
+
+  @@unique([workspace_id, sku], map: "uq_offering_sku")
+  @@index([workspace_id, product_id], map: "ix_offering_workspace_product")
+  @@index([workspace_id, offering_type], map: "ix_offering_workspace_type")
+  @@map("offering")
+}
+
+/**
+ * An optional named price list — a customer, region, or channel that gets its
+ * own numbers. Prices without a price book are the workspace's list prices.
+ */
+model PriceBook {
+  id                 String    @id @default(uuid()) @db.Uuid
+  workspace_id       String    @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?   @db.Uuid
+  updated_by_user_id String?   @db.Uuid
+  archived_at        DateTime? @db.Timestamptz(6)
+  code               String    @db.VarChar(64)
+  name               String    @db.VarChar(255)
+  description        String?   @db.Text
+  /**
+   * Set when a book is single-currency; a Price still carries its own currency.
+   */
+  currency_code      String?   @db.VarChar(3)
+  /**
+   * Which entity or channel this list is for, when it is that specific.
+   */
+  entity_id          String?   @db.Uuid
+  region             String?   @db.VarChar(100)
+  channel            String?   @db.VarChar(100)
+  is_default         Boolean   @default(false)
+  active_from        DateTime? @db.Date
+  active_until       DateTime? @db.Date
+
+  prices Price[]
+
+  @@unique([workspace_id, code], map: "uq_price_book_code")
+  @@index([workspace_id], map: "ix_price_book_workspace")
+  @@map("price_book")
+}
+
+/**
+ * How one Offering is charged. Separate from the Offering so a single SKU can
+ * carry several valid prices at once — a $1,000 setup fee, $100 per month, and
+ * $0.02 per transaction over the included allowance are three Price rows.
+ * Prices are effective-dated and never overwritten: a catalog change adds a new
+ * row so past transactions still resolve to what was actually agreed.
+ */
+model Price {
+  id                     String         @id @default(uuid()) @db.Uuid
+  workspace_id           String         @db.Uuid
+  created_at             DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime       @updatedAt @db.Timestamptz(6)
+  created_by_user_id     String?        @db.Uuid
+  updated_by_user_id     String?        @db.Uuid
+  offering_id            String         @db.Uuid
+  price_book_id          String?        @db.Uuid
+  /**
+   * Names the charge on a quote line: "Setup fee", "Monthly", "Overage".
+   */
+  name                   String?        @db.VarChar(255)
+  /**
+   * What this charge is measured in, when that is not what the Offering is
+   * measured in: a per-seat plan can meter API calls, and "25 users" and
+   * "10,000 calls" are not the same quantity. Falls back to the Offering.
+   */
+  unit_of_measure        String?        @db.VarChar(50)
+  currency_code          String         @default("USD") @db.VarChar(3)
+  charge_type            ChargeType     @default(one_time)
+  pricing_model          PricingModel   @default(flat)
+  /**
+   * The amount for `flat` and `per_unit`; tiered models read `PriceTier` instead.
+   */
+  unit_amount            Decimal?       @db.Decimal(18, 4)
+  billing_period         BillingPeriod?
+  /**
+   * With `billing_period`, supports "every three months".
+   */
+  billing_interval_count Int            @default(1)
+  minimum_quantity       Decimal?       @db.Decimal(18, 4)
+  /**
+   * Units covered by the base amount before per-unit or overage pricing starts
+   * — the "$500 includes 10,000 transactions" half of base-plus-overage.
+   */
+  included_quantity      Decimal?       @db.Decimal(18, 4)
+  effective_from         DateTime?      @db.Date
+  effective_until        DateTime?      @db.Date
+
+  offering   Offering    @relation(fields: [offering_id], references: [id])
+  price_book PriceBook?  @relation(fields: [price_book_id], references: [id])
+  tiers      PriceTier[]
+
+  @@index([workspace_id, offering_id], map: "ix_price_workspace_offering")
+  @@index([workspace_id, price_book_id], map: "ix_price_workspace_book")
+  @@map("price")
+}
+
+/**
+ * One band of a tiered, volume, or graduated Price. `up_to` is the inclusive
+ * upper bound of the band; the last tier leaves it null for "and above".
+ */
+model PriceTier {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspace_id String   @db.Uuid
+  price_id     String   @db.Uuid
+  up_to        Decimal? @db.Decimal(18, 4)
+  unit_amount  Decimal? @db.Decimal(18, 4)
+  /**
+   * Charged once for entering the band, on top of any per-unit amount.
+   */
+  flat_amount  Decimal? @db.Decimal(18, 4)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @updatedAt @db.Timestamptz(6)
+
+  price Price @relation(fields: [price_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, price_id], map: "ix_price_tier_workspace_price")
+  @@map("price_tier")
+}
+
+/**
+ * Membership of one Offering inside a bundle Offering. Bundles are modeled as
+ * relationships so a security package can be one device, one installation
+ * service, and a twelve-month monitoring subscription — each keeping its own
+ * fulfillment and billing lifecycle — without duplicating any of them.
+ */
+model BundleComponent {
+  id                     String   @id @default(uuid()) @db.Uuid
+  workspace_id           String   @db.Uuid
+  parent_offering_id     String   @db.Uuid
+  child_offering_id      String   @db.Uuid
+  is_required            Boolean  @default(true)
+  default_quantity       Decimal  @default(1) @db.Decimal(18, 4)
+  minimum_quantity       Decimal? @db.Decimal(18, 4)
+  maximum_quantity       Decimal? @db.Decimal(18, 4)
+  /**
+   * Whether the component carries its own price or is covered by the bundle's.
+   */
+  is_separately_priced   Boolean  @default(false)
+  /**
+   * Whether the customer sees the component as its own line.
+   */
+  is_visible_to_customer Boolean  @default(true)
+  sort_order             Int      @default(0)
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @updatedAt @db.Timestamptz(6)
+
+  parent_offering Offering @relation("bundle_parent", fields: [parent_offering_id], references: [id])
+  child_offering  Offering @relation("bundle_child", fields: [child_offering_id], references: [id])
+
+  @@unique([parent_offering_id, child_offering_id], map: "uq_bundle_component")
+  @@index([workspace_id, parent_offering_id], map: "ix_bundle_component_parent")
+  @@map("bundle_component")
+}
+
+/**
+ * Stock for one Offering at one location. Tracked per Offering, never per
+ * Product: a large blue shirt and a medium red one are separate stock even
+ * though they share a Product.
+ * Available quantity is `quantity_on_hand - quantity_reserved`; it is derived
+ * rather than stored so the two cannot drift apart.
+ */
+model InventoryItem {
+  id                     String          @id @default(uuid()) @db.Uuid
+  workspace_id           String          @db.Uuid
+  created_at             DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime        @updatedAt @db.Timestamptz(6)
+  offering_id            String          @db.Uuid
+  location_code          String          @db.VarChar(100)
+  location_name          String?         @db.VarChar(255)
+  quantity_on_hand       Decimal         @default(0) @db.Decimal(18, 4)
+  quantity_reserved      Decimal         @default(0) @db.Decimal(18, 4)
+  reorder_point          Decimal?        @db.Decimal(18, 4)
+  requires_serial_number Boolean         @default(false)
+  requires_lot_number    Boolean         @default(false)
+  lot_number             String?         @db.VarChar(100)
+  status                 InventoryStatus @default(available)
+  notes                  String?         @db.Text
+
+  offering Offering @relation(fields: [offering_id], references: [id])
+
+  @@index([workspace_id, offering_id], map: "ix_inventory_item_workspace_offering")
+  @@index([workspace_id, location_code], map: "ix_inventory_item_location")
+  @@map("inventory_item")
+}
+
+/**
+ * What a service Offering promises — the reusable half of selling work. What
+ * actually happened for one customer is a `ServiceDelivery`.
+ */
+model ServiceDefinition {
+  id                      String       @id @default(uuid()) @db.Uuid
+  workspace_id            String       @db.Uuid
+  created_at              DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime     @updatedAt @db.Timestamptz(6)
+  offering_id             String       @unique(map: "uq_service_definition_offering") @db.Uuid
+  scope_type              ServiceScope @default(fixed)
+  scope_summary           String?      @db.Text
+  estimated_hours         Decimal?     @db.Decimal(12, 2)
+  delivery_location       String?      @db.VarChar(255)
+  required_skills         String?      @db.VarChar(1000)
+  service_level_agreement String?      @db.Text
+  scheduling_notes        String?      @db.Text
+  cancellation_policy     String?      @db.Text
+  included_deliverables   String?      @db.Text
+
+  offering Offering @relation(fields: [offering_id], references: [id])
+
+  @@index([workspace_id], map: "ix_service_definition_workspace")
+  @@map("service_definition")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Selling — transactions
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * A product the salesperson is considering on a Deal. Deal Lines are working
+ * notes, not a commitment: they point at the live catalog and are re-read every
+ * time. The snapshot happens on the Quote.
+ */
+model DealLine {
+  id                 String        @id @default(uuid()) @db.Uuid
+  workspace_id       String        @db.Uuid
+  created_at         DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime      @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?       @db.Uuid
+  updated_by_user_id String?       @db.Uuid
+  deal_id            String        @db.Uuid
+  offering_id        String        @db.Uuid
+  name               String        @db.VarChar(255)
+  quantity           Decimal       @default(1) @db.Decimal(18, 4)
+  /**
+   * Overrides the catalog price when a rep is modelling a specific number.
+   */
+  unit_amount        Decimal?      @db.Decimal(18, 4)
+  currency_code      String        @default("USD") @db.VarChar(3)
+  discount_type      DiscountType?
+  discount_value     Decimal?      @db.Decimal(18, 4)
+  /**
+   * Contract length being discussed, for subscription and retainer lines.
+   */
+  term_months        Int?
+  sort_order         Int           @default(0)
+  notes              String?       @db.Text
+
+  deal     Deal     @relation(fields: [deal_id], references: [id])
+  offering Offering @relation(fields: [offering_id], references: [id])
+
+  @@index([workspace_id, deal_id], map: "ix_deal_line_workspace_deal")
+  @@map("deal_line")
+}
+
+/**
+ * A formal proposal to an Entity. The Quote is where the catalog stops being
+ * live: accepting one must reproduce exactly what the customer saw.
+ */
+model Quote {
+  id                        String        @id @default(uuid()) @db.Uuid
+  workspace_id              String        @db.Uuid
+  owner_user_id             String?       @db.Uuid
+  created_at                DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime      @updatedAt @db.Timestamptz(6)
+  created_by_user_id        String?       @db.Uuid
+  updated_by_user_id        String?       @db.Uuid
+  archived_at               DateTime?     @db.Timestamptz(6)
+  quote_number              String        @db.VarChar(50)
+  name                      String        @db.VarChar(255)
+  deal_id                   String?       @db.Uuid
+  /**
+   * The buying entity. The parties that pay, receive service, and take delivery
+   * may all be different organizations, so each role is its own column.
+   */
+  entity_id                 String        @db.Uuid
+  bill_to_entity_id         String?       @db.Uuid
+  ship_to_entity_id         String?       @db.Uuid
+  primary_contact_person_id String?       @db.Uuid
+  billing_contact_person_id String?       @db.Uuid
+  status                    QuoteStatus   @default(draft)
+  currency_code             String        @default("USD") @db.VarChar(3)
+  price_book_id             String?       @db.Uuid
+  /**
+   * Rolled up from the lines whenever they change, so a list of quotes does not
+   * need to load every line to show a number.
+   */
+  subtotal_amount           Decimal       @default(0) @db.Decimal(18, 4)
+  discount_amount           Decimal       @default(0) @db.Decimal(18, 4)
+  tax_amount                Decimal       @default(0) @db.Decimal(18, 4)
+  total_amount              Decimal       @default(0) @db.Decimal(18, 4)
+  /**
+   * Order-level discount, applied on top of any line-level discounts.
+   */
+  discount_type             DiscountType?
+  discount_value            Decimal?      @db.Decimal(18, 4)
+  valid_from                DateTime?     @db.Date
+  valid_until               DateTime?     @db.Date
+  payment_terms             String?       @db.VarChar(100)
+  contract_term_months      Int?
+  sent_at                   DateTime?     @db.Timestamptz(6)
+  accepted_at               DateTime?     @db.Timestamptz(6)
+  declined_at               DateTime?     @db.Timestamptz(6)
+  decline_reason            String?       @db.Text
+  terms                     String?       @db.Text
+  notes                     String?       @db.Text
+
+  entity Entity      @relation(fields: [entity_id], references: [id])
+  deal   Deal?       @relation(fields: [deal_id], references: [id])
+  lines  QuoteLine[]
+  orders Order[]
+
+  @@unique([workspace_id, quote_number], map: "uq_quote_number")
+  @@index([workspace_id, entity_id], map: "ix_quote_workspace_entity")
+  @@index([workspace_id, status], map: "ix_quote_workspace_status")
+  @@index([workspace_id, deal_id], map: "ix_quote_workspace_deal")
+  @@map("quote")
+}
+
+/**
+ * One agreed line on a proposal — and the point of the whole model.
+ * Every field the customer was shown is copied here rather than referenced:
+ * name, description, unit of measure, price, discount, billing terms. The
+ * `offering_id` and `price_id` back-references are for reporting only; a later
+ * catalog change must not be able to alter what this line says.
+ */
+model QuoteLine {
+  id                     String            @id @default(uuid()) @db.Uuid
+  workspace_id           String            @db.Uuid
+  created_at             DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime          @updatedAt @db.Timestamptz(6)
+  quote_id               String            @db.Uuid
+  deal_line_id           String?           @db.Uuid
+  /**
+   * Where this line came from in the catalog. Reporting only — the snapshot
+   * below is what the line means.
+   */
+  offering_id            String?           @db.Uuid
+  price_id               String?           @db.Uuid
+  /**
+   * Bundle components quoted as their own lines point back at the bundle line.
+   */
+  parent_quote_line_id   String?           @db.Uuid
+  name                   String            @db.VarChar(255)
+  description            String?           @db.Text
+  sku                    String?           @db.VarChar(64)
+  offering_type          OfferingType
+  charge_type            ChargeType        @default(one_time)
+  pricing_model          PricingModel      @default(flat)
+  fulfillment_policy     FulfillmentPolicy @default(none)
+  unit_of_measure        String            @default("each") @db.VarChar(50)
+  quantity               Decimal           @default(1) @db.Decimal(18, 4)
+  unit_amount            Decimal?          @db.Decimal(18, 4)
+  currency_code          String            @default("USD") @db.VarChar(3)
+  billing_period         BillingPeriod?
+  billing_interval_count Int               @default(1)
+  included_quantity      Decimal?          @db.Decimal(18, 4)
+  term_months            Int?
+  discount_type          DiscountType?
+  discount_value         Decimal?          @db.Decimal(18, 4)
+  /**
+   * `subtotal_amount` is before discount; `total_amount` is what the customer
+   * pays for this line.
+   */
+  subtotal_amount        Decimal           @default(0) @db.Decimal(18, 4)
+  discount_amount        Decimal           @default(0) @db.Decimal(18, 4)
+  tax_amount             Decimal           @default(0) @db.Decimal(18, 4)
+  total_amount           Decimal           @default(0) @db.Decimal(18, 4)
+  /**
+   * An optional line is presented but not counted in the total until chosen.
+   */
+  is_optional            Boolean           @default(false)
+  sort_order             Int               @default(0)
+  notes                  String?           @db.Text
+
+  quote Quote       @relation(fields: [quote_id], references: [id], onDelete: Cascade)
+  lines OrderLine[]
+
+  @@index([workspace_id, quote_id], map: "ix_quote_line_workspace_quote")
+  @@map("quote_line")
+}
+
+/**
+ * An accepted Quote, and the record everything downstream hangs off. Its
+ * lifecycle, fulfillment, and billing statuses move independently: paid but not
+ * shipped, shipped but not activated, and active but past due are all real.
+ */
+model Order {
+  id                        String            @id @default(uuid()) @db.Uuid
+  workspace_id              String            @db.Uuid
+  owner_user_id             String?           @db.Uuid
+  created_at                DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime          @updatedAt @db.Timestamptz(6)
+  created_by_user_id        String?           @db.Uuid
+  updated_by_user_id        String?           @db.Uuid
+  archived_at               DateTime?         @db.Timestamptz(6)
+  order_number              String            @db.VarChar(50)
+  quote_id                  String?           @db.Uuid
+  deal_id                   String?           @db.Uuid
+  entity_id                 String            @db.Uuid
+  bill_to_entity_id         String?           @db.Uuid
+  ship_to_entity_id         String?           @db.Uuid
+  primary_contact_person_id String?           @db.Uuid
+  billing_contact_person_id String?           @db.Uuid
+  status                    OrderStatus       @default(draft)
+  fulfillment_status        FulfillmentStatus @default(not_started)
+  billing_status            BillingStatus     @default(not_invoiced)
+  currency_code             String            @default("USD") @db.VarChar(3)
+  subtotal_amount           Decimal           @default(0) @db.Decimal(18, 4)
+  discount_amount           Decimal           @default(0) @db.Decimal(18, 4)
+  tax_amount                Decimal           @default(0) @db.Decimal(18, 4)
+  total_amount              Decimal           @default(0) @db.Decimal(18, 4)
+  ordered_at                DateTime?         @db.Timestamptz(6)
+  payment_terms             String?           @db.VarChar(100)
+  purchase_order_number     String?           @db.VarChar(100)
+  /**
+   * Default delivery address. A line or a shipment may override it — one order
+   * can go to several places.
+   */
+  ship_to_name              String?           @db.VarChar(255)
+  ship_to_address_line_1    String?           @db.VarChar(255)
+  ship_to_address_line_2    String?           @db.VarChar(255)
+  ship_to_city              String?           @db.VarChar(100)
+  ship_to_region            String?           @db.VarChar(100)
+  ship_to_postal_code       String?           @db.VarChar(20)
+  ship_to_country_code      String?           @db.VarChar(2)
+  canceled_at               DateTime?         @db.Timestamptz(6)
+  cancellation_reason       String?           @db.Text
+  notes                     String?           @db.Text
+
+  entity             Entity            @relation(fields: [entity_id], references: [id])
+  quote              Quote?            @relation(fields: [quote_id], references: [id])
+  lines              OrderLine[]
+  shipments          Shipment[]
+  subscriptions      Subscription[]
+  service_deliveries ServiceDelivery[]
+
+  @@unique([workspace_id, order_number], map: "uq_order_number")
+  @@index([workspace_id, entity_id], map: "ix_order_workspace_entity")
+  @@index([workspace_id, status], map: "ix_order_workspace_status")
+  @@index([workspace_id, quote_id], map: "ix_order_workspace_quote")
+  @@map("order")
+}
+
+/**
+ * One sold line. Carries the same snapshot as the Quote Line it came from, and
+ * is the thing that turns into a Shipment, a Subscription, a Service Delivery,
+ * or several of them at once.
+ */
+model OrderLine {
+  id                          String            @id @default(uuid()) @db.Uuid
+  workspace_id                String            @db.Uuid
+  created_at                  DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime          @updatedAt @db.Timestamptz(6)
+  order_id                    String            @db.Uuid
+  quote_line_id               String?           @db.Uuid
+  offering_id                 String?           @db.Uuid
+  price_id                    String?           @db.Uuid
+  parent_order_line_id        String?           @db.Uuid
+  name                        String            @db.VarChar(255)
+  description                 String?           @db.Text
+  sku                         String?           @db.VarChar(64)
+  offering_type               OfferingType
+  charge_type                 ChargeType        @default(one_time)
+  pricing_model               PricingModel      @default(flat)
+  fulfillment_policy          FulfillmentPolicy @default(none)
+  unit_of_measure             String            @default("each") @db.VarChar(50)
+  quantity                    Decimal           @default(1) @db.Decimal(18, 4)
+  unit_amount                 Decimal?          @db.Decimal(18, 4)
+  currency_code               String            @default("USD") @db.VarChar(3)
+  billing_period              BillingPeriod?
+  billing_interval_count      Int               @default(1)
+  included_quantity           Decimal?          @db.Decimal(18, 4)
+  term_months                 Int?
+  discount_type               DiscountType?
+  discount_value              Decimal?          @db.Decimal(18, 4)
+  subtotal_amount             Decimal           @default(0) @db.Decimal(18, 4)
+  discount_amount             Decimal           @default(0) @db.Decimal(18, 4)
+  tax_amount                  Decimal           @default(0) @db.Decimal(18, 4)
+  total_amount                Decimal           @default(0) @db.Decimal(18, 4)
+  /**
+   * Fulfillment moves on its own; whether the line was paid for is
+   * `Order.billing_status`.
+   */
+  fulfillment_status          FulfillmentStatus @default(not_started)
+  quantity_fulfilled          Decimal           @default(0) @db.Decimal(18, 4)
+  /**
+   * Who the work or licence is actually for, when that is not the buyer.
+   */
+  service_recipient_entity_id String?           @db.Uuid
+  end_user_person_id          String?           @db.Uuid
+  sort_order                  Int               @default(0)
+  notes                       String?           @db.Text
+
+  order              Order             @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  quote_line         QuoteLine?        @relation(fields: [quote_line_id], references: [id])
+  shipment_lines     ShipmentLine[]
+  subscriptions      Subscription[]
+  service_deliveries ServiceDelivery[]
+
+  @@index([workspace_id, order_id], map: "ix_order_line_workspace_order")
+  @@map("order_line")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Selling — fulfillment and delivery
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * One delivery against an Order. An order line may take several shipments, to
+ * several addresses; returns and replacements are shipments too, so the history
+ * of what physically moved stays in one place.
+ */
+model Shipment {
+  id                          String         @id @default(uuid()) @db.Uuid
+  workspace_id                String         @db.Uuid
+  created_at                  DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime       @updatedAt @db.Timestamptz(6)
+  created_by_user_id          String?        @db.Uuid
+  updated_by_user_id          String?        @db.Uuid
+  order_id                    String         @db.Uuid
+  shipment_number             String         @db.VarChar(50)
+  status                      ShipmentStatus @default(pending)
+  carrier                     String?        @db.VarChar(100)
+  service_level               String?        @db.VarChar(100)
+  tracking_number             String?        @db.VarChar(100)
+  tracking_url                String?        @db.VarChar(2048)
+  ship_from_location_code     String?        @db.VarChar(100)
+  ship_to_name                String?        @db.VarChar(255)
+  ship_to_address_line_1      String?        @db.VarChar(255)
+  ship_to_address_line_2      String?        @db.VarChar(255)
+  ship_to_city                String?        @db.VarChar(100)
+  ship_to_region              String?        @db.VarChar(100)
+  ship_to_postal_code         String?        @db.VarChar(20)
+  ship_to_country_code        String?        @db.VarChar(2)
+  shipped_at                  DateTime?      @db.Timestamptz(6)
+  delivered_at                DateTime?      @db.Timestamptz(6)
+  canceled_at                 DateTime?      @db.Timestamptz(6)
+  /**
+   * A return is recorded as a shipment in the other direction; a replacement
+   * points back at the shipment it replaces.
+   */
+  is_return                   Boolean        @default(false)
+  return_reason               String?        @db.Text
+  replacement_for_shipment_id String?        @db.Uuid
+  notes                       String?        @db.Text
+
+  order Order          @relation(fields: [order_id], references: [id])
+  lines ShipmentLine[]
+
+  @@unique([workspace_id, shipment_number], map: "uq_shipment_number")
+  @@index([workspace_id, order_id], map: "ix_shipment_workspace_order")
+  @@index([workspace_id, status], map: "ix_shipment_workspace_status")
+  @@map("shipment")
+}
+
+/**
+ * How much of one Order Line travelled on one Shipment — the row that makes
+ * partial shipments and backorders expressible.
+ */
+model ShipmentLine {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspace_id         String   @db.Uuid
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @updatedAt @db.Timestamptz(6)
+  shipment_id          String   @db.Uuid
+  order_line_id        String   @db.Uuid
+  quantity             Decimal  @default(0) @db.Decimal(18, 4)
+  /**
+   * Quantity that could not be sent and is waiting on stock.
+   */
+  backordered_quantity Decimal  @default(0) @db.Decimal(18, 4)
+  /**
+   * Comma-separated when a line covers several serialized units.
+   */
+  serial_numbers       String?  @db.VarChar(1000)
+  lot_number           String?  @db.VarChar(100)
+  notes                String?  @db.Text
+
+  shipment   Shipment  @relation(fields: [shipment_id], references: [id], onDelete: Cascade)
+  order_line OrderLine @relation(fields: [order_line_id], references: [id])
+
+  @@index([workspace_id, shipment_id], map: "ix_shipment_line_workspace_shipment")
+  @@index([workspace_id, order_line_id], map: "ix_shipment_line_order_line")
+  @@map("shipment_line")
+}
+
+/**
+ * The continuing agreement after a sale — not a repeating Deal Line. A
+ * subscription outlives the transaction that opened it and keeps its own
+ * status, period, commitment, and renewal behavior.
+ */
+model Subscription {
+  id                          String             @id @default(uuid()) @db.Uuid
+  workspace_id                String             @db.Uuid
+  owner_user_id               String?            @db.Uuid
+  created_at                  DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime           @updatedAt @db.Timestamptz(6)
+  created_by_user_id          String?            @db.Uuid
+  updated_by_user_id          String?            @db.Uuid
+  archived_at                 DateTime?          @db.Timestamptz(6)
+  subscription_number         String             @db.VarChar(50)
+  name                        String             @db.VarChar(255)
+  entity_id                   String             @db.Uuid
+  bill_to_entity_id           String?            @db.Uuid
+  order_id                    String?            @db.Uuid
+  order_line_id               String?            @db.Uuid
+  offering_id                 String?            @db.Uuid
+  status                      SubscriptionStatus @default(active)
+  start_date                  DateTime           @db.Date
+  end_date                    DateTime?          @db.Date
+  /**
+   * The period being served right now, advanced on renewal.
+   */
+  current_period_start        DateTime?          @db.Date
+  current_period_end          DateTime?          @db.Date
+  /**
+   * How long the customer is contractually committed, which is not the same as
+   * how often they are billed: a one-year commitment can be billed monthly.
+   */
+  commitment_end_date         DateTime?          @db.Date
+  billing_period              BillingPeriod      @default(month)
+  billing_interval_count      Int                @default(1)
+  /**
+   * Seats, licenses, devices, or committed units — the unit is on the line.
+   */
+  quantity                    Decimal            @default(1) @db.Decimal(18, 4)
+  unit_of_measure             String             @default("each") @db.VarChar(50)
+  unit_amount                 Decimal?           @db.Decimal(18, 4)
+  currency_code               String             @default("USD") @db.VarChar(3)
+  auto_renew                  Boolean            @default(true)
+  trial_end_date              DateTime?          @db.Date
+  paused_at                   DateTime?          @db.Timestamptz(6)
+  resumes_on                  DateTime?          @db.Date
+  /**
+   * When cancellation was asked for, versus when service actually stops — a
+   * cancel-at-period-end keeps serving until `cancellation_effective_date`.
+   */
+  canceled_at                 DateTime?          @db.Timestamptz(6)
+  cancellation_effective_date DateTime?          @db.Date
+  cancellation_reason         String?            @db.Text
+  notes                       String?            @db.Text
+
+  entity        Entity                  @relation(fields: [entity_id], references: [id])
+  order         Order?                  @relation(fields: [order_id], references: [id])
+  order_line    OrderLine?              @relation(fields: [order_line_id], references: [id])
+  amendments    SubscriptionAmendment[]
+  entitlements  Entitlement[]
+  usage_records UsageRecord[]
+
+  @@unique([workspace_id, subscription_number], map: "uq_subscription_number")
+  @@index([workspace_id, entity_id], map: "ix_subscription_workspace_entity")
+  @@index([workspace_id, status], map: "ix_subscription_workspace_status")
+  @@index([workspace_id, order_id], map: "ix_subscription_workspace_order")
+  @@map("subscription")
+}
+
+/**
+ * One change to a subscription, recorded rather than applied in place. Adding
+ * seats, changing plan, renewing, pausing, and canceling all leave a row here
+ * with the before and after values, so the original agreement survives and a
+ * prorated charge can be explained months later.
+ */
+model SubscriptionAmendment {
+  id                              String              @id @default(uuid()) @db.Uuid
+  workspace_id                    String              @db.Uuid
+  created_at                      DateTime            @default(now()) @db.Timestamptz(6)
+  created_by_user_id              String?             @db.Uuid
+  subscription_id                 String              @db.Uuid
+  amendment_type                  AmendmentType
+  effective_date                  DateTime            @db.Date
+  /**
+   * Null while the amendment is scheduled for a future date.
+   */
+  applied_at                      DateTime?           @db.Timestamptz(6)
+  previous_quantity               Decimal?            @db.Decimal(18, 4)
+  new_quantity                    Decimal?            @db.Decimal(18, 4)
+  previous_unit_amount            Decimal?            @db.Decimal(18, 4)
+  new_unit_amount                 Decimal?            @db.Decimal(18, 4)
+  previous_offering_id            String?             @db.Uuid
+  new_offering_id                 String?             @db.Uuid
+  previous_billing_period         BillingPeriod?
+  new_billing_period              BillingPeriod?
+  previous_billing_interval_count Int?
+  new_billing_interval_count      Int?
+  previous_status                 SubscriptionStatus?
+  new_status                      SubscriptionStatus?
+  previous_commitment_end_date    DateTime?           @db.Date
+  new_commitment_end_date         DateTime?           @db.Date
+  /**
+   * The charge or credit this change produces for the remainder of the current
+   * period. Positive is owed by the customer.
+   */
+  proration_amount                Decimal?            @db.Decimal(18, 4)
+  currency_code                   String?             @db.VarChar(3)
+  reason                          String?             @db.Text
+
+  subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, subscription_id], map: "ix_amendment_workspace_subscription")
+  @@map("subscription_amendment")
+}
+
+/**
+ * What the customer may use, as opposed to what they bought. A Subscription
+ * says "Professional Plan, annual"; its Entitlements say "25 users", "100 GB",
+ * "premium support", "four training sessions".
+ */
+model Entitlement {
+  id                  String    @id @default(uuid()) @db.Uuid
+  workspace_id        String    @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
+  subscription_id     String    @db.Uuid
+  entity_id           String    @db.Uuid
+  order_line_id       String?   @db.Uuid
+  /**
+   * Stable machine name the usage feed refers to, e.g. `api_calls`, `seats`.
+   */
+  code                String    @db.VarChar(64)
+  name                String    @db.VarChar(255)
+  unit_of_measure     String    @default("each") @db.VarChar(50)
+  /**
+   * Null with `is_unlimited` false means access rather than an allowance —
+   * "premium support" is on or off.
+   */
+  included_quantity   Decimal?  @db.Decimal(18, 4)
+  used_quantity       Decimal   @default(0) @db.Decimal(18, 4)
+  is_unlimited        Boolean   @default(false)
+  /**
+   * What each unit past the allowance costs — the overage half of
+   * base-plus-overage pricing.
+   */
+  overage_unit_amount Decimal?  @db.Decimal(18, 4)
+  currency_code       String?   @db.VarChar(3)
+  effective_from      DateTime? @db.Date
+  effective_until     DateTime? @db.Date
+  notes               String?   @db.Text
+
+  subscription  Subscription  @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+  usage_records UsageRecord[]
+
+  @@unique([subscription_id, code], map: "uq_entitlement_code")
+  @@index([workspace_id, subscription_id], map: "ix_entitlement_workspace_subscription")
+  @@map("entitlement")
+}
+
+/**
+ * Something the customer consumed: API calls, storage, consulting hours,
+ * background checks. Usage is recorded as events so a period can be re-rated
+ * without losing what actually happened.
+ */
+model UsageRecord {
+  id                 String    @id @default(uuid()) @db.Uuid
+  workspace_id       String    @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  created_by_user_id String?   @db.Uuid
+  entity_id          String    @db.Uuid
+  subscription_id    String?   @db.Uuid
+  entitlement_id     String?   @db.Uuid
+  order_line_id      String?   @db.Uuid
+  metric_code        String    @db.VarChar(64)
+  quantity           Decimal   @db.Decimal(18, 4)
+  unit_of_measure    String    @default("each") @db.VarChar(50)
+  occurred_at        DateTime  @default(now()) @db.Timestamptz(6)
+  period_start       DateTime? @db.Timestamptz(6)
+  period_end         DateTime? @db.Timestamptz(6)
+  source             String?   @db.VarChar(100)
+  /**
+   * The upstream system's id for this event, so a replayed feed can be
+   * recognised rather than double-counted.
+   */
+  external_reference String?   @db.VarChar(255)
+  notes              String?   @db.Text
+
+  subscription Subscription? @relation(fields: [subscription_id], references: [id])
+  entitlement  Entitlement?  @relation(fields: [entitlement_id], references: [id])
+
+  @@index([workspace_id, subscription_id, occurred_at], map: "ix_usage_record_subscription")
+  @@index([workspace_id, entitlement_id], map: "ix_usage_record_entitlement")
+  @@map("usage_record")
+}
+
+/**
+ * The work actually performed for one customer, against a service Offering's
+ * `ServiceDefinition`. The definition is the reusable promise; this is the
+ * engagement — who is doing it, when, how many hours went in, and whether the
+ * customer signed it off.
+ */
+model ServiceDelivery {
+  id                             String                @id @default(uuid()) @db.Uuid
+  workspace_id                   String                @db.Uuid
+  owner_user_id                  String?               @db.Uuid
+  created_at                     DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                     DateTime              @updatedAt @db.Timestamptz(6)
+  created_by_user_id             String?               @db.Uuid
+  updated_by_user_id             String?               @db.Uuid
+  archived_at                    DateTime?             @db.Timestamptz(6)
+  delivery_number                String                @db.VarChar(50)
+  name                           String                @db.VarChar(255)
+  order_id                       String?               @db.Uuid
+  order_line_id                  String?               @db.Uuid
+  offering_id                    String?               @db.Uuid
+  /**
+   * The service recipient, which need not be the entity that bought the work.
+   */
+  entity_id                      String                @db.Uuid
+  contact_person_id              String?               @db.Uuid
+  assigned_user_id               String?               @db.Uuid
+  assigned_team                  String?               @db.VarChar(100)
+  status                         ServiceDeliveryStatus @default(not_started)
+  scheduled_start_at             DateTime?             @db.Timestamptz(6)
+  scheduled_end_at               DateTime?             @db.Timestamptz(6)
+  actual_start_at                DateTime?             @db.Timestamptz(6)
+  actual_end_at                  DateTime?             @db.Timestamptz(6)
+  estimated_hours                Decimal?              @db.Decimal(12, 2)
+  hours_consumed                 Decimal               @default(0) @db.Decimal(12, 2)
+  delivery_location              String?               @db.VarChar(255)
+  service_level_agreement        String?               @db.Text
+  customer_accepted_at           DateTime?             @db.Timestamptz(6)
+  customer_accepted_by_person_id String?               @db.Uuid
+  acceptance_notes               String?               @db.Text
+  /**
+   * Work that came out of, or ran into, a support Case or an Incident.
+   */
+  case_id                        String?               @db.Uuid
+  incident_id                    String?               @db.Uuid
+  notes                          String?               @db.Text
+
+  entity     Entity             @relation(fields: [entity_id], references: [id])
+  order      Order?             @relation(fields: [order_id], references: [id])
+  order_line OrderLine?         @relation(fields: [order_line_id], references: [id])
+  milestones ServiceMilestone[]
+
+  @@unique([workspace_id, delivery_number], map: "uq_service_delivery_number")
+  @@index([workspace_id, entity_id], map: "ix_service_delivery_workspace_entity")
+  @@index([workspace_id, status], map: "ix_service_delivery_workspace_status")
+  @@index([workspace_id, order_id], map: "ix_service_delivery_workspace_order")
+  @@map("service_delivery")
+}
+
+/**
+ * A checkpoint in a service engagement, and where project billing lives:
+ * 30% at kickoff, 40% at delivery, 30% at completion.
+ */
+model ServiceMilestone {
+  id                  String          @id @default(uuid()) @db.Uuid
+  workspace_id        String          @db.Uuid
+  created_at          DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime        @updatedAt @db.Timestamptz(6)
+  service_delivery_id String          @db.Uuid
+  name                String          @db.VarChar(255)
+  sequence            Int             @default(0)
+  status              MilestoneStatus @default(pending)
+  billing_percent     Decimal?        @db.Decimal(9, 4)
+  billing_amount      Decimal?        @db.Decimal(18, 4)
+  currency_code       String?         @db.VarChar(3)
+  due_on              DateTime?       @db.Date
+  completed_at        DateTime?       @db.Timestamptz(6)
+  accepted_at         DateTime?       @db.Timestamptz(6)
+  notes               String?         @db.Text
+
+  service_delivery ServiceDelivery @relation(fields: [service_delivery_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, service_delivery_id], map: "ix_service_milestone_delivery")
+  @@map("service_milestone")
 }

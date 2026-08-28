@@ -3,6 +3,8 @@ import 'dotenv/config';
 import { prisma } from '@/lib/prisma';
 import { DEMO_USERS } from '@/lib/demo-users';
 import { DEMO_WORKSPACE_ID } from '@/lib/demo-workspace';
+import { acceptQuote, createQuoteFromDeal, shipShipment } from '@/lib/selling/flow';
+import { amendSubscription } from '@/lib/selling/subscriptions';
 
 /**
  * Loads a realistic demo dataset into `DEMO_WORKSPACE_ID`, which the app
@@ -16,6 +18,30 @@ const owners = [HECTOR, SARAH, MARCUS];
 const ownerOf = (i: number) => owners[i % owners.length]!;
 
 async function reset() {
+  // Selling, deepest first — usage hangs off entitlements, which hang off
+  // subscriptions, which point back at order lines and the catalog.
+  await prisma.usageRecord.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.entitlement.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.subscriptionAmendment.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.subscription.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.serviceMilestone.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.serviceDelivery.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.shipmentLine.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.shipment.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.orderLine.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.order.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.quoteLine.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.quote.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.dealLine.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.bundleComponent.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.priceTier.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.price.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.priceBook.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.inventoryItem.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.serviceDefinition.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.offering.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+  await prisma.product.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
+
   await prisma.chatMessage.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
   await prisma.chatSession.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
   await prisma.chatAuthCode.deleteMany({ where: { workspace_id: WORKSPACE_ID } });
@@ -81,6 +107,274 @@ async function seedPeople() {
     );
   }
   return created;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Selling                                                                     */
+/* -------------------------------------------------------------------------- */
+
+const product = (row: Record<string, unknown>, i: number) =>
+  prisma.product.create({
+    data: { workspace_id: WORKSPACE_ID, owner_user_id: ownerOf(i), created_by_user_id: ownerOf(i), status: 'active', ...row },
+  } as never);
+
+const offering = (product_id: string, row: Record<string, unknown>, i: number) =>
+  prisma.offering.create({
+    data: { workspace_id: WORKSPACE_ID, product_id, owner_user_id: ownerOf(i), created_by_user_id: ownerOf(i), ...row },
+  } as never);
+
+const price = (offering_id: string, row: Record<string, unknown>) =>
+  prisma.price.create({ data: { workspace_id: WORKSPACE_ID, offering_id, ...row } } as never);
+
+/**
+ * A catalog covering the selling models the schema is built for: a per-seat
+ * subscription with a setup fee and usage overage, fixed-fee and hourly
+ * services, a physical good with stock, a tiered usage product, and a bundle
+ * that mixes all three fulfillment paths.
+ */
+async function seedCatalog() {
+  const [platform, services, hardware, screening] = await Promise.all([
+    product({ name: 'Relationship Management Platform', category: 'software', tax_category: 'SaaS', description: 'The product this workspace runs on.' }, 0),
+    product({ name: 'Professional Services', category: 'consulting', tax_category: 'Services' }, 1),
+    product({ name: 'Site Security Hardware', category: 'hardware', tax_category: 'Tangible goods' }, 2),
+    product({ name: 'Background Screening', category: 'software', tax_category: 'SaaS' }, 3),
+  ]);
+
+  // One product, two packages, two billing frequencies — which is exactly why a
+  // product carries no price of its own.
+  const pro = await offering(platform.id, {
+    sku: 'PLAT-PRO-MO', name: 'Professional Plan', offering_type: 'subscription', unit_of_measure: 'user',
+    fulfillment_policy: 'digital_activation', description: 'Per-seat plan billed monthly, with API usage included.',
+  }, 0);
+  await price(pro.id, { name: 'Setup', charge_type: 'one_time', pricing_model: 'flat', unit_amount: '1000' });
+  await price(pro.id, { name: 'Monthly', charge_type: 'recurring', pricing_model: 'per_unit', unit_amount: '25', billing_period: 'month', minimum_quantity: '5' });
+  await price(pro.id, { name: 'API calls', charge_type: 'usage', pricing_model: 'per_unit', unit_amount: '0.02', included_quantity: '10000', unit_of_measure: 'call' });
+
+  const enterprise = await offering(platform.id, {
+    sku: 'PLAT-ENT-YR', name: 'Enterprise Plan, billed annually', offering_type: 'subscription', unit_of_measure: 'user',
+    fulfillment_policy: 'digital_activation', description: 'Annual commitment with volume seat pricing.',
+  }, 1);
+  const enterpriseSeats = await price(enterprise.id, {
+    name: 'Annual', charge_type: 'recurring', pricing_model: 'volume', billing_period: 'year',
+  });
+  await prisma.priceTier.createMany({
+    data: [
+      { workspace_id: WORKSPACE_ID, price_id: enterpriseSeats.id, up_to: '50', unit_amount: '240' },
+      { workspace_id: WORKSPACE_ID, price_id: enterpriseSeats.id, up_to: '250', unit_amount: '210' },
+      { workspace_id: WORKSPACE_ID, price_id: enterpriseSeats.id, up_to: null, unit_amount: '180' },
+    ],
+  });
+
+  const onboarding = await offering(services.id, {
+    sku: 'SVC-ONBOARD', name: 'Onboarding', offering_type: 'service', unit_of_measure: 'engagement',
+    fulfillment_policy: 'scheduled_work', description: 'Fixed-fee implementation: data migration, configuration, and training.',
+  }, 2);
+  await price(onboarding.id, { charge_type: 'one_time', pricing_model: 'flat', unit_amount: '5000' });
+  await prisma.serviceDefinition.create({
+    data: {
+      workspace_id: WORKSPACE_ID, offering_id: onboarding.id, scope_type: 'fixed', estimated_hours: '40',
+      delivery_location: 'Remote', required_skills: 'Implementation consultant',
+      service_level_agreement: 'Kickoff within five business days of the order.',
+      included_deliverables: 'Migrated data, configured workspace, two training sessions.',
+      cancellation_policy: 'Full refund if canceled before kickoff.',
+    },
+  });
+
+  const consulting = await offering(services.id, {
+    sku: 'SVC-CONSULT-HR', name: 'Consulting', offering_type: 'service', unit_of_measure: 'hour',
+    fulfillment_policy: 'scheduled_work', description: 'Time and materials, billed against a retainer or as used.',
+  }, 3);
+  await price(consulting.id, { charge_type: 'usage', pricing_model: 'per_unit', unit_amount: '200' });
+  await prisma.serviceDefinition.create({
+    data: {
+      workspace_id: WORKSPACE_ID, offering_id: consulting.id, scope_type: 'flexible', estimated_hours: '20',
+      delivery_location: 'Remote or on-site', required_skills: 'Solution architect',
+      scheduling_notes: 'Booked in half-day blocks.', cancellation_policy: '48 hours notice.',
+    },
+  });
+
+  const sensor = await offering(hardware.id, {
+    sku: 'HW-SENSOR-1', name: 'Door Sensor', offering_type: 'good', unit_of_measure: 'each',
+    fulfillment_policy: 'shipping', description: 'Wireless door sensor, batteries included.',
+    attributes: { color: 'white', wireless_protocol: 'Zigbee' },
+  }, 0);
+  await price(sensor.id, { charge_type: 'one_time', pricing_model: 'per_unit', unit_amount: '120' });
+  await prisma.inventoryItem.createMany({
+    data: [
+      { workspace_id: WORKSPACE_ID, offering_id: sensor.id, location_code: 'WH-AUSTIN', location_name: 'Austin warehouse', quantity_on_hand: '250', reorder_point: '50', requires_serial_number: true },
+      { workspace_id: WORKSPACE_ID, offering_id: sensor.id, location_code: 'WH-RENO', location_name: 'Reno warehouse', quantity_on_hand: '40', reorder_point: '25', requires_serial_number: true },
+    ],
+  });
+
+  const monitoring = await offering(hardware.id, {
+    sku: 'SUB-MONITOR-MO', name: 'Site Monitoring', offering_type: 'subscription', unit_of_measure: 'device',
+    fulfillment_policy: 'digital_activation', description: 'Round-the-clock monitoring for installed devices.',
+  }, 1);
+  await price(monitoring.id, { name: 'Monthly', charge_type: 'recurring', pricing_model: 'per_unit', unit_amount: '12', billing_period: 'month' });
+
+  const install = await offering(services.id, {
+    sku: 'SVC-INSTALL', name: 'Installation', offering_type: 'service', unit_of_measure: 'site',
+    fulfillment_policy: 'scheduled_work', description: 'On-site installation and commissioning.',
+  }, 2);
+  await price(install.id, { charge_type: 'one_time', pricing_model: 'flat', unit_amount: '450' });
+
+  // The spec's own bundle example: one device, one installation, twelve months
+  // of monitoring — three fulfillment paths under one thing to buy.
+  const packageOffering = await offering(hardware.id, {
+    sku: 'PKG-SITE-SECURITY', name: 'Site Security Package', offering_type: 'bundle', unit_of_measure: 'site',
+    fulfillment_policy: 'none', description: 'Sensor, installation, and a year of monitoring.',
+  }, 3);
+  await price(packageOffering.id, { charge_type: 'one_time', pricing_model: 'per_unit', unit_amount: '1400' });
+  await prisma.bundleComponent.createMany({
+    data: [
+      { workspace_id: WORKSPACE_ID, parent_offering_id: packageOffering.id, child_offering_id: sensor.id, default_quantity: '4', sort_order: 0 },
+      { workspace_id: WORKSPACE_ID, parent_offering_id: packageOffering.id, child_offering_id: install.id, default_quantity: '1', sort_order: 1 },
+      { workspace_id: WORKSPACE_ID, parent_offering_id: packageOffering.id, child_offering_id: monitoring.id, default_quantity: '4', sort_order: 2 },
+    ],
+  });
+
+  const checks = await offering(screening.id, {
+    sku: 'BGC-STANDARD', name: 'Standard Background Check', offering_type: 'subscription', unit_of_measure: 'check',
+    fulfillment_policy: 'digital_activation', description: 'Priced per check, cheaper as volume grows.',
+  }, 0);
+  await price(checks.id, { name: 'Platform fee', charge_type: 'recurring', pricing_model: 'flat', unit_amount: '99', billing_period: 'month' });
+  const checkUsage = await price(checks.id, { name: 'Checks run', charge_type: 'usage', pricing_model: 'graduated', unit_of_measure: 'check' });
+  await prisma.priceTier.createMany({
+    data: [
+      { workspace_id: WORKSPACE_ID, price_id: checkUsage.id, up_to: '100', unit_amount: '2' },
+      { workspace_id: WORKSPACE_ID, price_id: checkUsage.id, up_to: '500', unit_amount: '1.5' },
+      { workspace_id: WORKSPACE_ID, price_id: checkUsage.id, up_to: null, unit_amount: '1' },
+    ],
+  });
+
+  // A government price list, to show that a price book beats the list price
+  // without the list price being edited.
+  const book = await prisma.priceBook.create({
+    data: {
+      workspace_id: WORKSPACE_ID, code: 'GOV', name: 'Government price list',
+      description: 'Negotiated rates for public-sector customers.', currency_code: 'USD', channel: 'public-sector',
+    },
+  });
+  await price(pro.id, { name: 'Monthly', charge_type: 'recurring', pricing_model: 'per_unit', unit_amount: '19', billing_period: 'month', price_book_id: book.id });
+
+  return { pro, enterprise, onboarding, consulting, sensor, packageOffering, checks, book };
+}
+
+/**
+ * Walk one deal all the way through, using the same code paths the app does, so
+ * the demo data is exactly what the flow produces rather than a hand-built
+ * imitation of it.
+ */
+async function seedSellingFlow(catalog: Awaited<ReturnType<typeof seedCatalog>>, dealId: string, entityId: string) {
+  await prisma.dealLine.createMany({
+    data: [
+      { workspace_id: WORKSPACE_ID, deal_id: dealId, offering_id: catalog.pro.id, name: 'Professional Plan', quantity: '25', term_months: 12, sort_order: 0, created_by_user_id: HECTOR },
+      { workspace_id: WORKSPACE_ID, deal_id: dealId, offering_id: catalog.onboarding.id, name: 'Onboarding', quantity: '1', sort_order: 1, created_by_user_id: HECTOR },
+      { workspace_id: WORKSPACE_ID, deal_id: dealId, offering_id: catalog.sensor.id, name: 'Door Sensor', quantity: '8', discount_type: 'percentage', discount_value: '10', sort_order: 2, created_by_user_id: HECTOR },
+    ],
+  });
+
+  const { quote } = await createQuoteFromDeal({
+    workspace_id: WORKSPACE_ID,
+    deal_id: dealId,
+    name: 'Acme platform rollout',
+    contract_term_months: 12,
+    payment_terms: 'Net 30',
+    owner_user_id: HECTOR,
+    created_by_user_id: HECTOR,
+  });
+
+  const { order, provisioning } = await acceptQuote({
+    workspace_id: WORKSPACE_ID,
+    quote_id: quote.id,
+    purchase_order_number: 'ACME-PO-4417',
+    created_by_user_id: HECTOR,
+  });
+
+  // The order ships in two goes, which is the ordinary case rather than the
+  // exception: a partial shipment leaves the rest on the order.
+  const sensorLine = await prisma.orderLine.findFirst({
+    where: { workspace_id: WORKSPACE_ID, order_id: order.id, sku: 'HW-SENSOR-1' },
+  });
+  if (sensorLine) {
+    const shipment = await prisma.shipment.create({
+      data: {
+        workspace_id: WORKSPACE_ID, order_id: order.id, shipment_number: 'SHP-0001', status: 'pending',
+        carrier: 'UPS', service_level: 'Ground', tracking_number: '1Z999AA10123456784',
+        ship_from_location_code: 'WH-AUSTIN', ship_to_name: 'Acme Corporation', ship_to_city: 'Austin',
+        ship_to_region: 'TX', ship_to_country_code: 'US', created_by_user_id: HECTOR,
+      },
+    });
+    await prisma.shipmentLine.create({
+      data: {
+        workspace_id: WORKSPACE_ID, shipment_id: shipment.id, order_line_id: sensorLine.id,
+        quantity: '5', backordered_quantity: '3', serial_numbers: 'SN-0001, SN-0002, SN-0003, SN-0004, SN-0005',
+      },
+    });
+    await shipShipment(WORKSPACE_ID, shipment.id);
+  }
+
+  const [subscriptionId] = provisioning.subscriptions;
+  if (subscriptionId) {
+    // Two teams onboard mid-period: seats go up, the change is prorated, and
+    // the original agreement stays exactly as it was signed.
+    await amendSubscription({
+      workspace_id: WORKSPACE_ID,
+      subscription_id: subscriptionId,
+      amendment_type: 'quantity_change',
+      quantity: '40',
+      reason: 'Two new teams onboarded',
+      created_by_user_id: HECTOR,
+    });
+
+    const apiCalls = await prisma.entitlement.findFirst({
+      where: { workspace_id: WORKSPACE_ID, subscription_id: subscriptionId, overage_unit_amount: { not: null } },
+    });
+    if (apiCalls) {
+      const days = [21, 14, 7, 2];
+      for (const [i, daysAgo] of days.entries()) {
+        const occurred = new Date(Date.now() - daysAgo * 86_400_000);
+        await prisma.usageRecord.create({
+          data: {
+            workspace_id: WORKSPACE_ID, entity_id: entityId, subscription_id: subscriptionId,
+            entitlement_id: apiCalls.id, metric_code: 'api_calls', quantity: String(2800 + i * 400),
+            unit_of_measure: 'call', occurred_at: occurred, source: 'api-gateway',
+            external_reference: `usage-${daysAgo}d`,
+          },
+        });
+      }
+      await prisma.entitlement.update({
+        where: { id: apiCalls.id },
+        data: { used_quantity: String(2800 + 3200 + 3600 + 4000) },
+      });
+    }
+  }
+
+  const [deliveryId] = provisioning.service_deliveries;
+  if (deliveryId) {
+    await prisma.serviceDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        status: 'in_progress',
+        assigned_user_id: SARAH,
+        assigned_team: 'Implementation',
+        scheduled_start_at: new Date(Date.now() - 10 * 86_400_000),
+        scheduled_end_at: new Date(Date.now() + 18 * 86_400_000),
+        actual_start_at: new Date(Date.now() - 9 * 86_400_000),
+        hours_consumed: '18',
+      },
+    });
+    // Project billing: 30% at kickoff, 40% at delivery, 30% at completion.
+    await prisma.serviceMilestone.createMany({
+      data: [
+        { workspace_id: WORKSPACE_ID, service_delivery_id: deliveryId, name: 'Kickoff', sequence: 0, status: 'accepted', billing_percent: '30', billing_amount: '1500', currency_code: 'USD', completed_at: new Date(Date.now() - 8 * 86_400_000), accepted_at: new Date(Date.now() - 7 * 86_400_000) },
+        { workspace_id: WORKSPACE_ID, service_delivery_id: deliveryId, name: 'Data migration delivered', sequence: 1, status: 'in_progress', billing_percent: '40', billing_amount: '2000', currency_code: 'USD', due_on: new Date(Date.now() + 7 * 86_400_000) },
+        { workspace_id: WORKSPACE_ID, service_delivery_id: deliveryId, name: 'Completion and sign-off', sequence: 2, status: 'pending', billing_percent: '30', billing_amount: '1500', currency_code: 'USD', due_on: new Date(Date.now() + 18 * 86_400_000) },
+      ],
+    });
+  }
+
+  return { quote, order, provisioning };
 }
 
 async function main() {
@@ -214,6 +508,12 @@ async function main() {
     ),
   );
 
+  const catalog = await seedCatalog();
+  // The Acme "Services Expansion" deal is the one carried all the way through
+  // to an order, so the demo workspace has a live subscription, an engagement
+  // in progress, and a partly shipped order to look at.
+  const flow = await seedSellingFlow(catalog, deals[1]!.id, acme.id);
+
   console.log('Seeded:');
   console.log(`  Entities:  8`);
   console.log(`  People:    12`);
@@ -222,6 +522,12 @@ async function main() {
   console.log(`  Incidents: ${incidents.length}`);
   console.log(`  Requests:  5`);
   console.log(`  Chat channels: ${channelRows.length} (/chat/widget/sales, /chat/widget/support)`);
+  console.log(`  Products:  4 with 9 offerings, 1 price book`);
+  console.log(`  Quote:     ${flow.quote.quote_number} -> order ${flow.order.order_number}`);
+  console.log(
+    `  Opened:    ${flow.provisioning.subscriptions.length} subscription(s), ` +
+      `${flow.provisioning.service_deliveries.length} service delivery(ies)`,
+  );
   console.log('');
   console.log(`Workspace id (already the app's default): ${WORKSPACE_ID}`);
 }
