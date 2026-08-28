@@ -512,6 +512,12 @@ describe('quote to order', () => {
     expect(subscription!.billing_period).toBe('month');
     expect(subscription!.current_period_start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(subscription!.current_period_end).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // The 12-month term the deal line agreed to, which is not the same as the
+    // monthly billing frequency.
+    const start = new Date(`${subscription!.current_period_start}T00:00:00Z`);
+    const commitment = new Date(`${subscription!.commitment_end_date}T00:00:00Z`);
+    expect(commitment.getUTCFullYear()).toBe(start.getUTCFullYear() + 1);
+    expect(commitment.getUTCMonth()).toBe(start.getUTCMonth());
 
     const entitlements = await list(listEntitlements, 'entitlements', `&subscription_id=${subscription!.id}`);
     expect(entitlements.map((row) => [row.code, row.included_quantity])).toEqual([

@@ -15,7 +15,7 @@ import { prisma } from '@/lib/prisma';
 
 import { buildLines, componentQuantity, type LineDraft } from './catalog';
 import { fromScaled, maxScaled, minScaled, toScaled } from './money';
-import { periodBounds } from './periods';
+import { addPeriod, periodBounds } from './periods';
 import { rollUp, type PriceLike } from './pricing';
 import { withDocumentNumber } from './numbering';
 
@@ -420,9 +420,9 @@ async function provisionOrder(tx: Tx, order: OrderRow, lines: OrderLineRow[]): P
           start_date: period.start,
           current_period_start: period.start,
           current_period_end: period.end,
-          commitment_end_date: line.term_months
-            ? new Date(Date.UTC(period.start.getUTCFullYear(), period.start.getUTCMonth() + line.term_months, period.start.getUTCDate()))
-            : null,
+          // Through `addPeriod` so a term starting on the 31st clamps to the
+          // end of a shorter month rather than rolling into the next one.
+          commitment_end_date: line.term_months ? addPeriod(period.start, 'month', line.term_months) : null,
           billing_period: line.billing_period ?? 'month',
           billing_interval_count: line.billing_interval_count,
           quantity: line.quantity,
