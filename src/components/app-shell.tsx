@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             open-rm
           </Link>
 
-          <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm">
+          <nav className="flex flex-1 flex-wrap items-center gap-1 text-sm">
             <NavLink href="/" active={pathname === '/'}>
               <Home className="size-4" /> Home
             </NavLink>
@@ -75,8 +75,10 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
     <Link
       href={href}
       className={cn(
-        // `shrink-0` keeps a tab's label intact once the row is full: the nav
-        // scrolls instead of squeezing the last tabs down to their icons.
+        // `shrink-0` keeps a tab's label intact once the row is full, and the
+        // nav wraps to a second line rather than squeezing or hiding the last
+        // tabs — with a catalog and a sales pipeline there are more of them
+        // than fit on one row.
         'flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 whitespace-nowrap transition-colors',
         active
           ? 'bg-accent text-accent-foreground font-medium'

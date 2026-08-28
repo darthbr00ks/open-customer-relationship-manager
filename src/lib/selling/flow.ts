@@ -107,6 +107,7 @@ export async function createQuoteFromDeal(input: CreateQuoteFromDealInput) {
       .map((price) => ({
         id: price.id,
         name: price.name,
+        unit_of_measure: price.unit_of_measure,
         currency_code: price.currency_code,
         charge_type: price.charge_type,
         pricing_model: price.pricing_model,

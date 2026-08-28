@@ -26,6 +26,8 @@ export type TierLike = {
 export type PriceLike = {
   id?: string;
   name?: string | null;
+  /** What this charge is measured in, when that differs from the offering's unit. */
+  unit_of_measure?: string | null;
   currency_code: string;
   charge_type: ChargeType;
   pricing_model: PricingModel;
@@ -285,6 +287,7 @@ export function rollUp(
 export type ResolvedCharge = ComputedCharge & {
   price_id?: string;
   name: string | null;
+  unit_of_measure: string | null;
   charge_type: ChargeType;
   pricing_model: PricingModel;
   currency_code: string;
@@ -305,6 +308,7 @@ export function quoteOffering(prices: PriceLike[], quantity: Decimalish, selecti
       ...computeCharge(price, quantity),
       price_id: price.id,
       name: price.name ?? null,
+      unit_of_measure: price.unit_of_measure ?? null,
       charge_type: price.charge_type,
       pricing_model: price.pricing_model,
       currency_code: price.currency_code,

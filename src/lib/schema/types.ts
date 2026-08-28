@@ -31,6 +31,11 @@ export type FieldDef = {
   type: FieldType;
   /** For `select`: the allowed values, in display order. */
   options?: readonly string[];
+  /**
+   * For `select`: how to show an option whose stored value is not readable on
+   * its own — an id, a code. Defaults to title-casing the value.
+   */
+  optionLabel?: (value: string) => string;
   /** For `lookup`: which resource the id points at, and how to render the target row. */
   lookup?: { resource: ResourceName; labelOf: (row: never) => string };
   required?: boolean;

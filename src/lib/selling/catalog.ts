@@ -11,8 +11,9 @@
 
 import { fromScaled, mulScaled, toScaled, type Decimalish } from './money';
 import {
+  computeCharge,
   discountAmount,
-  quoteOffering,
+  selectPrices,
   type BillingPeriod,
   type ChargeType,
   type DiscountType,
@@ -108,42 +109,44 @@ export type BuildLinesInput = {
  * unambiguous.
  */
 export function buildLines(input: BuildLinesInput): LineDraft[] {
-  const { offering, quantity, selection } = input;
+  const { offering, selection } = input;
   const sortOrder = input.sort_order ?? 0;
 
-  const charges =
-    input.unit_amount_override != null && input.unit_amount_override !== ''
-      ? [negotiatedCharge(input.unit_amount_override, quantity, selection.currency_code)]
-      : quoteOffering(input.prices, quantity, selection);
+  const negotiated = input.unit_amount_override != null && input.unit_amount_override !== '';
+  const charges: (PriceLike & { id?: string })[] = negotiated
+    ? [negotiatedPrice(input.unit_amount_override!, selection.currency_code)]
+    : selectPrices(input.prices, selection).sort((a, b) => chargeOrder(a.charge_type) - chargeOrder(b.charge_type));
 
   if (charges.length === 0) {
     // Nothing in the catalog prices this yet; the line still belongs on the
     // quote so the omission is visible rather than silent.
-    charges.push(negotiatedCharge('0', quantity, selection.currency_code));
+    charges.push(negotiatedPrice('0', selection.currency_code));
   }
 
-  return charges.map((charge, index) => {
-    const periods = periodsInTerm(charge.billing_period, charge.billing_interval_count, input.term_months);
-    const subtotal = fromScaled(mulScaled(toScaled(charge.amount), toScaled(periods)));
+  return charges.map((price, index) => {
+    const quantity = quotedQuantity(price, input.quantity);
+    const { amount } = computeCharge(price, quantity);
+    const periods = periodsInTerm(price.billing_period, price.billing_interval_count, input.term_months);
+    const subtotal = fromScaled(mulScaled(toScaled(amount), toScaled(periods)));
     const discount = discountAmount(subtotal, input.discount_type, input.discount_value);
 
     return {
       offering_id: offering.id,
-      price_id: charge.price_id ?? null,
-      name: charges.length > 1 && charge.name ? `${offering.name} — ${charge.name}` : offering.name,
+      price_id: price.id ?? null,
+      name: charges.length > 1 && price.name ? `${offering.name} — ${price.name}` : offering.name,
       description: offering.description ?? null,
       sku: offering.sku,
       offering_type: offering.offering_type,
-      charge_type: charge.charge_type,
-      pricing_model: charge.pricing_model,
+      charge_type: price.charge_type,
+      pricing_model: price.pricing_model,
       fulfillment_policy: offering.fulfillment_policy,
-      unit_of_measure: offering.unit_of_measure,
-      quantity: String(quantity),
-      unit_amount: charge.unit_amount,
-      currency_code: charge.currency_code,
-      billing_period: charge.billing_period,
-      billing_interval_count: charge.billing_interval_count,
-      included_quantity: charge.included_quantity,
+      unit_of_measure: price.unit_of_measure ?? offering.unit_of_measure,
+      quantity,
+      unit_amount: price.unit_amount == null ? null : String(price.unit_amount),
+      currency_code: price.currency_code,
+      billing_period: price.billing_period ?? null,
+      billing_interval_count: price.billing_interval_count ?? 1,
+      included_quantity: price.included_quantity == null ? null : String(price.included_quantity),
       term_months: input.term_months ?? null,
       discount_type: input.discount_type ?? null,
       discount_value: input.discount_value == null ? null : String(input.discount_value),
@@ -158,19 +161,33 @@ export function buildLines(input: BuildLinesInput): LineDraft[] {
   });
 }
 
-function negotiatedCharge(unitAmount: Decimalish, quantity: Decimalish, currency: string) {
+/**
+ * The quantity one charge is quoted at.
+ *
+ * A line is sized by one number — 25 seats — but its charges are not all
+ * measured in seats. A usage charge with an included allowance is the
+ * base-plus-overage case: what the customer is buying on this line is the
+ * allowance ("10,000 transactions included"), not 25 of anything. A usage
+ * charge without an allowance is committed volume, and is quoted at the
+ * quantity the line was sized by.
+ */
+function quotedQuantity(price: PriceLike, lineQuantity: Decimalish): string {
+  const allowance = price.included_quantity;
+  return price.charge_type === 'usage' && allowance != null && allowance !== ''
+    ? String(allowance)
+    : String(lineQuantity);
+}
+
+const chargeOrder = (type: ChargeType) => ({ one_time: 0, recurring: 1, usage: 2 })[type];
+
+/** A price the rep decided on, standing in for the catalog for one line. */
+function negotiatedPrice(unitAmount: Decimalish, currency: string): PriceLike {
   return {
-    price_id: undefined,
     name: null,
+    currency_code: currency,
     charge_type: 'one_time' as ChargeType,
     pricing_model: 'per_unit' as PricingModel,
-    currency_code: currency,
-    billing_period: null,
-    billing_interval_count: 1,
-    included_quantity: null,
     unit_amount: String(unitAmount),
-    billable_quantity: String(quantity),
-    amount: fromScaled(mulScaled(toScaled(unitAmount), toScaled(quantity))),
   };
 }
 

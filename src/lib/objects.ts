@@ -1,11 +1,17 @@
 import {
   Building2,
+  FileText,
   LayoutGrid,
   LifeBuoy,
   Lightbulb,
   MessagesSquare,
+  Package,
+  Repeat,
+  ShoppingCart,
   Siren,
+  Tags,
   Users,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -19,6 +25,32 @@ import {
   CHAT_CHANNEL_SEARCH_FIELDS,
 } from './schema/chat-channel';
 import { DEAL_FIELDS, DEAL_LAYOUT, DEAL_LIST_COLUMNS, DEAL_SEARCH_FIELDS } from './schema/deal';
+import {
+  OFFERING_FIELDS,
+  OFFERING_LAYOUT,
+  OFFERING_LIST_COLUMNS,
+  OFFERING_SEARCH_FIELDS,
+} from './schema/offering';
+import { ORDER_FIELDS, ORDER_LAYOUT, ORDER_LIST_COLUMNS, ORDER_SEARCH_FIELDS } from './schema/order';
+import {
+  PRODUCT_FIELDS,
+  PRODUCT_LAYOUT,
+  PRODUCT_LIST_COLUMNS,
+  PRODUCT_SEARCH_FIELDS,
+} from './schema/product';
+import { QUOTE_FIELDS, QUOTE_LAYOUT, QUOTE_LIST_COLUMNS, QUOTE_SEARCH_FIELDS } from './schema/quote';
+import {
+  SERVICE_DELIVERY_FIELDS,
+  SERVICE_DELIVERY_LAYOUT,
+  SERVICE_DELIVERY_LIST_COLUMNS,
+  SERVICE_DELIVERY_SEARCH_FIELDS,
+} from './schema/service-delivery';
+import {
+  SUBSCRIPTION_FIELDS,
+  SUBSCRIPTION_LAYOUT,
+  SUBSCRIPTION_LIST_COLUMNS,
+  SUBSCRIPTION_SEARCH_FIELDS,
+} from './schema/subscription';
 import { ENTITY_FIELDS, ENTITY_LAYOUT, ENTITY_LIST_COLUMNS, ENTITY_SEARCH_FIELDS } from './schema/entity';
 import {
   INCIDENT_FIELDS,
@@ -42,7 +74,13 @@ export type ObjectKey =
   | 'cases'
   | 'incidents'
   | 'requests'
-  | 'chat_channels';
+  | 'chat_channels'
+  | 'products'
+  | 'offerings'
+  | 'quotes'
+  | 'orders'
+  | 'subscriptions'
+  | 'service_deliveries';
 
 export type NoteParentType =
   | 'entity'
@@ -52,7 +90,13 @@ export type NoteParentType =
   | 'incident'
   | 'request'
   | 'chat_channel'
-  | 'chat_conversation';
+  | 'chat_conversation'
+  | 'product'
+  | 'offering'
+  | 'quote'
+  | 'order'
+  | 'subscription'
+  | 'service_delivery';
 
 export type ObjectConfig = {
   key: ObjectKey;
@@ -181,6 +225,102 @@ export const OBJECTS: Record<ObjectKey, ObjectConfig> = {
       session_ttl_hours: 720,
     },
   },
+  products: {
+    key: 'products',
+    noteParentType: 'product',
+    resource: 'products',
+    singular: 'Product',
+    plural: 'Products',
+    routeBase: '/products',
+    icon: Package,
+    titleField: 'name',
+    subtitleFields: ['category', 'status'],
+    fields: PRODUCT_FIELDS,
+    layout: PRODUCT_LAYOUT,
+    listColumns: PRODUCT_LIST_COLUMNS,
+    searchFields: PRODUCT_SEARCH_FIELDS,
+    defaults: { status: 'draft' },
+  },
+  offerings: {
+    key: 'offerings',
+    noteParentType: 'offering',
+    resource: 'offerings',
+    singular: 'Offering',
+    plural: 'Offerings',
+    routeBase: '/offerings',
+    icon: Tags,
+    titleField: 'name',
+    subtitleFields: ['sku', 'offering_type'],
+    fields: OFFERING_FIELDS,
+    layout: OFFERING_LAYOUT,
+    listColumns: OFFERING_LIST_COLUMNS,
+    searchFields: OFFERING_SEARCH_FIELDS,
+    defaults: { offering_type: 'good', unit_of_measure: 'each', fulfillment_policy: 'none' },
+  },
+  quotes: {
+    key: 'quotes',
+    noteParentType: 'quote',
+    resource: 'quotes',
+    singular: 'Quote',
+    plural: 'Quotes',
+    routeBase: '/quotes',
+    icon: FileText,
+    titleField: 'name',
+    subtitleFields: ['quote_number', 'status'],
+    fields: QUOTE_FIELDS,
+    layout: QUOTE_LAYOUT,
+    listColumns: QUOTE_LIST_COLUMNS,
+    searchFields: QUOTE_SEARCH_FIELDS,
+    defaults: { status: 'draft', currency_code: 'USD' },
+  },
+  orders: {
+    key: 'orders',
+    noteParentType: 'order',
+    resource: 'orders',
+    singular: 'Order',
+    plural: 'Orders',
+    routeBase: '/orders',
+    icon: ShoppingCart,
+    titleField: 'order_number',
+    subtitleFields: ['status', 'fulfillment_status'],
+    fields: ORDER_FIELDS,
+    layout: ORDER_LAYOUT,
+    listColumns: ORDER_LIST_COLUMNS,
+    searchFields: ORDER_SEARCH_FIELDS,
+    defaults: { status: 'draft', fulfillment_status: 'not_started', billing_status: 'not_invoiced', currency_code: 'USD' },
+  },
+  subscriptions: {
+    key: 'subscriptions',
+    noteParentType: 'subscription',
+    resource: 'subscriptions',
+    singular: 'Subscription',
+    plural: 'Subscriptions',
+    routeBase: '/subscriptions',
+    icon: Repeat,
+    titleField: 'name',
+    subtitleFields: ['subscription_number', 'status'],
+    fields: SUBSCRIPTION_FIELDS,
+    layout: SUBSCRIPTION_LAYOUT,
+    listColumns: SUBSCRIPTION_LIST_COLUMNS,
+    searchFields: SUBSCRIPTION_SEARCH_FIELDS,
+    defaults: { status: 'active', billing_period: 'month', billing_interval_count: 1, currency_code: 'USD', auto_renew: true },
+  },
+  service_deliveries: {
+    key: 'service_deliveries',
+    noteParentType: 'service_delivery',
+    resource: 'service-deliveries',
+    singular: 'Service delivery',
+    plural: 'Service deliveries',
+    routeBase: '/service-deliveries',
+    icon: Wrench,
+    titleField: 'name',
+    subtitleFields: ['delivery_number', 'status'],
+    fields: SERVICE_DELIVERY_FIELDS,
+    layout: SERVICE_DELIVERY_LAYOUT,
+    listColumns: SERVICE_DELIVERY_LIST_COLUMNS,
+    searchFields: SERVICE_DELIVERY_SEARCH_FIELDS,
+    defaults: { status: 'not_started' },
+  },
   requests: {
     key: 'requests',
     noteParentType: 'request',
@@ -202,11 +342,26 @@ export const OBJECTS: Record<ObjectKey, ObjectConfig> = {
 export const OBJECT_LIST = Object.values(OBJECTS);
 
 /**
- * Objects displayed in the primary navigation, in display order. Chat channels
- * are configuration rather than a record type people browse, so they are
- * reached from the chat inbox instead of a top-level tab.
+ * Objects displayed in the primary navigation, in display order.
+ *
+ * Two kinds of object stay out of it. Chat channels are configuration rather
+ * than a record type people browse, so they are reached from the chat inbox.
+ * Offerings and service deliveries are reached from the record they belong to —
+ * an offering from its product, a delivery from its order — because that is how
+ * anyone actually looks for them.
  */
-export const NAV_OBJECT_ORDER: ObjectKey[] = ['entities', 'persons', 'deals', 'cases', 'incidents', 'requests'];
+export const NAV_OBJECT_ORDER: ObjectKey[] = [
+  'entities',
+  'persons',
+  'deals',
+  'quotes',
+  'orders',
+  'subscriptions',
+  'products',
+  'cases',
+  'incidents',
+  'requests',
+];
 
 /** Reverse lookup so a lookup field's target resource can be rendered as a link to its record page. */
 export function objectKeyForResource(resource: ResourceName): ObjectKey | undefined {

@@ -1139,6 +1139,12 @@ model Price {
    * Names the charge on a quote line: "Setup fee", "Monthly", "Overage".
    */
   name                   String?        @db.VarChar(255)
+  /**
+   * What this charge is measured in, when that is not what the Offering is
+   * measured in: a per-seat plan can meter API calls, and "25 users" and
+   * "10,000 calls" are not the same quantity. Falls back to the Offering.
+   */
+  unit_of_measure        String?        @db.VarChar(50)
   currency_code          String         @default("USD") @db.VarChar(3)
   charge_type            ChargeType     @default(one_time)
   pricing_model          PricingModel   @default(flat)

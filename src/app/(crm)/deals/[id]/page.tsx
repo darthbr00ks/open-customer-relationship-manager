@@ -1,7 +1,8 @@
 'use client';
 
-import { useParams } from 'next/navigation';
-import { Archive, ArchiveRestore, CircleCheck, CircleX, Pencil, RefreshCw } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Archive, ArchiveRestore, CircleCheck, CircleX, FileText, ListPlus, Pencil, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 import { NoWorkspace } from '@/components/empty-state';
@@ -10,13 +11,17 @@ import { RecordFormDialog } from '@/components/record-form-dialog';
 import { RecordHeader, type RecordAction } from '@/components/record-header';
 import { RecordOverview } from '@/components/record-overview';
 import { RecordTabs } from '@/components/record-tabs';
+import { RelatedList } from '@/components/related-list';
+import { ChildFormDialog } from '@/components/selling/child-form-dialog';
 import { Badge } from '@/components/ui/badge';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { invalidateList, useCachedList } from '@/lib/data-cache';
-import { formatCurrency, formatLabel } from '@/lib/format';
+import { formatCurrency, formatDate, formatLabel } from '@/lib/format';
 import { dealStageTone } from '@/lib/schema/deal';
+import { quoteStatusTone } from '@/lib/schema/quote';
+import { DEAL_LINE_FIELDS } from '@/lib/schema/selling-children';
 import { OBJECTS } from '@/lib/objects';
-import type { Deal } from '@/lib/types';
+import type { Deal, DealLine, Offering, Quote } from '@/lib/types';
 import { useCurrentUserStore } from '@/stores/current-user';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -24,14 +29,21 @@ const object = OBJECTS.deals;
 
 export default function DealRecordPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const workspaceId = useWorkspaceStore((state) => state.workspaceId);
   const currentUser = useCurrentUserStore();
 
   const { rows: deals, loading } = useCachedList<Deal>('deals', workspaceId, { includeArchived: true });
+  const { rows: dealLines } = useCachedList<DealLine>('deal-lines', workspaceId, { limit: 200 });
+  const { rows: offerings } = useCachedList<Offering>('offerings', workspaceId, { includeArchived: true });
+  const { rows: quotes } = useCachedList<Quote>('quotes', workspaceId, { includeArchived: true });
 
   const [editing, setEditing] = useState(false);
   const [changingStage, setChangingStage] = useState(false);
   const [closingLost, setClosingLost] = useState(false);
+  const [addingLine, setAddingLine] = useState(false);
+  const [quoting, setQuoting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!workspaceId) return <NoWorkspace />;
   const deal = deals.find((row) => row.id === id);
@@ -40,6 +52,8 @@ export default function DealRecordPage() {
   }
 
   const isClosed = deal.stage === 'won' || deal.stage === 'lost';
+  const lines = dealLines.filter((line) => line.deal_id === deal.id);
+  const dealQuotes = quotes.filter((quote) => quote.deal_id === deal.id);
 
   const toggleArchive = async () => {
     if (deal.archived_at) await api.update('deals', deal.id, workspaceId, { archived_at: null });
@@ -47,9 +61,40 @@ export default function DealRecordPage() {
     invalidateList('deals', workspaceId);
   };
 
+  /**
+   * Deal lines point at the live catalog; a quote does not. Building one prices
+   * every line once and copies what the customer will see onto it, so a later
+   * catalog change cannot rewrite the proposal.
+   */
+  const createQuote = async () => {
+    setQuoting(true);
+    setError(null);
+    try {
+      const result = await api.action<{ quote: Quote }>('deals', deal.id, 'quote', workspaceId, {
+        created_by_user_id: currentUser.userId,
+        owner_user_id: deal.owner_user_id,
+      });
+      invalidateList('quotes', workspaceId);
+      invalidateList('quote-lines', workspaceId);
+      router.push(`/quotes/${result.quote.id}`);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? String(caught.message) : 'Could not build a quote from this deal.');
+    } finally {
+      setQuoting(false);
+    }
+  };
+
   const actions: RecordAction[] = [
     { key: 'edit', label: 'Edit', icon: Pencil, onClick: () => setEditing(true), primary: true },
-    { key: 'change-stage', label: 'Change Stage', icon: RefreshCw, onClick: () => setChangingStage(true), primary: true },
+    { key: 'add-line', label: 'Add Line', icon: ListPlus, onClick: () => setAddingLine(true), primary: true },
+    {
+      key: 'create-quote',
+      label: quoting ? 'Building…' : 'Create Quote',
+      icon: FileText,
+      onClick: () => void createQuote(),
+      primary: true,
+    },
+    { key: 'change-stage', label: 'Change Stage', icon: RefreshCw, onClick: () => setChangingStage(true) },
   ];
   if (!isClosed) {
     actions.push(
@@ -78,6 +123,8 @@ export default function DealRecordPage() {
         }
       />
 
+      {error ? <p className="text-destructive pt-4 text-sm">{error}</p> : null}
+
       <RecordTabs
         noteParentType="deal"
         recordId={deal.id}
@@ -91,6 +138,90 @@ export default function DealRecordPage() {
             recordId={deal.id}
           />
         }
+        related={
+          <>
+            <RelatedList
+              title="Products under consideration"
+              icon={ListPlus}
+              rows={lines}
+              onAdd={() => setAddingLine(true)}
+              addLabel="Add line"
+              emptyLabel="Nothing on this deal yet. Deal lines are working notes — they price from the live catalog every time."
+              columns={[
+                { key: 'name', label: 'Line', render: (row) => row.name },
+                {
+                  key: 'offering_id',
+                  label: 'Offering',
+                  render: (row) => {
+                    const offering = offerings.find((candidate) => candidate.id === row.offering_id);
+                    return offering ? (
+                      <Link href={`/offerings/${offering.id}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                        {offering.sku}
+                      </Link>
+                    ) : (
+                      'Unknown'
+                    );
+                  },
+                },
+                { key: 'quantity', label: 'Quantity', render: (row) => <span className="tabular-nums">{row.quantity}</span> },
+                {
+                  key: 'unit_amount',
+                  label: 'Negotiated price',
+                  render: (row) =>
+                    row.unit_amount ? (
+                      <span className="tabular-nums">{formatCurrency(row.unit_amount, row.currency_code)}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Catalog</span>
+                    ),
+                },
+                {
+                  key: 'discount',
+                  label: 'Discount',
+                  render: (row) =>
+                    row.discount_type
+                      ? row.discount_type === 'percentage'
+                        ? `${row.discount_value}%`
+                        : formatCurrency(row.discount_value, row.currency_code)
+                      : '—',
+                },
+                { key: 'term_months', label: 'Term', render: (row) => (row.term_months ? `${row.term_months} mo` : '—') },
+              ]}
+            />
+
+            <RelatedList
+              title="Quotes"
+              icon={FileText}
+              rows={dealQuotes}
+              onAdd={lines.length > 0 ? () => void createQuote() : undefined}
+              addLabel="Create quote"
+              emptyLabel="No proposal yet. Creating a quote snapshots the catalog so a later price change cannot alter it."
+              href={(row) => `/quotes/${row.id}`}
+              columns={[
+                {
+                  key: 'quote_number',
+                  label: 'Quote',
+                  render: (row) => (
+                    <Link href={`/quotes/${row.id}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                      {row.quote_number}
+                    </Link>
+                  ),
+                },
+                { key: 'name', label: 'Name', render: (row) => row.name },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  render: (row) => <Badge variant={quoteStatusTone(row.status)}>{formatLabel(row.status)}</Badge>,
+                },
+                {
+                  key: 'total_amount',
+                  label: 'Total',
+                  render: (row) => <span className="tabular-nums">{formatCurrency(row.total_amount, row.currency_code)}</span>,
+                },
+                { key: 'valid_until', label: 'Valid until', render: (row) => (row.valid_until ? formatDate(row.valid_until) : '—') },
+              ]}
+            />
+          </>
+        }
       />
 
       {editing ? (
@@ -100,6 +231,19 @@ export default function DealRecordPage() {
         <ChangeStageDialog open onOpenChange={setChangingStage} dealId={deal.id} currentStage={deal.stage} workspaceId={workspaceId} />
       ) : null}
       {closingLost ? <CloseLostDialog open onOpenChange={setClosingLost} dealId={deal.id} workspaceId={workspaceId} /> : null}
+      {addingLine ? (
+        <ChildFormDialog
+          open
+          onOpenChange={setAddingLine}
+          title="Add a product to this deal"
+          description="Priced from the live catalog until a quote is built."
+          resource="deal-lines"
+          fields={DEAL_LINE_FIELDS}
+          fixed={{ deal_id: deal.id, created_by_user_id: currentUser.userId }}
+          initialValues={{ quantity: 1, currency_code: deal.currency_code, sort_order: lines.length }}
+          workspaceId={workspaceId}
+        />
+      ) : null}
     </div>
   );
 }

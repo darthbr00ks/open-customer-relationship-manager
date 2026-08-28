@@ -96,6 +96,9 @@ async function seedCatalog() {
     pricing_model: 'per_unit',
     unit_amount: '0.02',
     included_quantity: '10000',
+    // The plan is sold per user but metered per call — two different units on
+    // one offering.
+    unit_of_measure: 'call',
   });
 
   const onboarding = await makeOffering(services.id, {
@@ -287,6 +290,50 @@ describe('deal to quote', () => {
     expect(monthly.term_months).toBe(12);
   });
 
+  it('quotes a metered charge in its own unit, at the allowance it buys', async () => {
+    const catalog = await seedCatalog();
+    const { deal } = await seedDeal(catalog);
+
+    const { lines } = await quoteFromDeal(deal.id);
+    const seats = lines.find((line: { name: string }) => line.name.endsWith('Monthly'));
+    const apiCalls = lines.find((line: { name: string }) => line.name.endsWith('API calls'));
+
+    expect(seats.quantity).toBe('25');
+    expect(seats.unit_of_measure).toBe('user');
+
+    // 25 seats is not 25 API calls: what the line buys is the 10,000 included,
+    // and nothing has been consumed to charge for yet.
+    expect(apiCalls.quantity).toBe('10000');
+    expect(apiCalls.unit_of_measure).toBe('call');
+    expect(apiCalls.included_quantity).toBe('10000');
+    expect(apiCalls.total_amount).toBe('0');
+  });
+
+  it('quotes committed usage volume at the quantity asked for', async () => {
+    const product = await makeProduct({ name: 'Background Checks' });
+    const offering = await makeOffering(product.id, {
+      sku: 'BGC-COMMIT',
+      name: 'Background Check',
+      offering_type: 'subscription',
+      unit_of_measure: 'check',
+    });
+    // No included allowance, so the line quantity is the commitment.
+    await makePrice(offering.id, { charge_type: 'usage', pricing_model: 'per_unit', unit_amount: '2' });
+
+    const entity = await makeEntity();
+    const deal = await post(createDeal, '/api/v1/deals', { name: 'Screening', entity_id: entity.id });
+    await post(createDealLine, '/api/v1/deal-lines', {
+      deal_id: deal.id,
+      offering_id: offering.id,
+      name: 'Background checks',
+      quantity: '600',
+    });
+
+    const { lines } = await quoteFromDeal(deal.id);
+    expect(lines[0].quantity).toBe('600');
+    expect(lines[0].total_amount).toBe('1200');
+  });
+
   it('carries a line discount onto the quote and into the total', async () => {
     const catalog = await seedCatalog();
     const { deal } = await seedDeal(catalog);
@@ -472,6 +519,7 @@ describe('quote to order', () => {
       ['professional_plan_api_calls', '10000'],
     ]);
     expect(entitlements[1]!.overage_unit_amount).toBe('0.02');
+    expect(entitlements[1]!.unit_of_measure).toBe('call');
   });
 
   it('opens a service delivery from the offering service definition', async () => {

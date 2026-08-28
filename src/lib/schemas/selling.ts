@@ -150,6 +150,7 @@ export const priceBookUpdateSchema = z.object(priceBookFields).partial();
 const priceFields = {
   price_book_id: uuid().nullish(),
   name: z.string().max(255).nullish(),
+  unit_of_measure: unitOfMeasure().nullish(),
   currency_code: currency(),
   charge_type: chargeType(),
   pricing_model: pricingModel(),
