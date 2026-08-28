@@ -2,35 +2,7 @@ import { z } from 'zod';
 
 import { MAX_MESSAGE_LENGTH, MAX_SESSION_TTL_HOURS, MIN_SESSION_TTL_HOURS } from '@/lib/chat/config';
 import { channelKeySchema } from '@/lib/chat/keys';
-
-/* -------------------------------------------------------------------------- */
-/* Shared building blocks                                                      */
-/* -------------------------------------------------------------------------- */
-
-const uuid = () => z.uuid();
-/** timestamptz column: accepts an ISO-8601 string, stores a Date. */
-const ts = () => z.coerce.date();
-/**
- * date column. Accepts `YYYY-MM-DD` (or any ISO date) and yields a Date, which
- * is what Prisma expects for a `@db.Date` field; responses render it back to
- * `YYYY-MM-DD`.
- */
-const day = () => z.union([z.iso.date(), z.iso.datetime()]).pipe(z.coerce.date());
-
-/** Scoping and audit fields accepted when creating any primary RM object. */
-const sharedCreate = {
-  workspace_id: uuid(),
-  owner_user_id: uuid().nullish(),
-  created_by_user_id: uuid().nullish(),
-  updated_by_user_id: uuid().nullish(),
-  archived_at: ts().nullish(),
-};
-
-/** Audit fields a client may reassign on update. */
-const sharedUpdate = {
-  owner_user_id: uuid().nullish(),
-  updated_by_user_id: uuid().nullish(),
-};
+import { day, sharedCreate, sharedUpdate, ts, uuid } from '@/lib/schemas/common';
 
 /* -------------------------------------------------------------------------- */
 /* Entity                                                                      */
@@ -279,7 +251,22 @@ export const requestUpdateSchema = z.object({ ...sharedUpdate, ...requestFields 
 /* -------------------------------------------------------------------------- */
 
 const noteFields = {
-  parent_type: z.enum(['entity', 'person', 'deal', 'case', 'incident', 'request']),
+  parent_type: z.enum([
+    'entity',
+    'person',
+    'deal',
+    'case',
+    'incident',
+    'request',
+    'chat_channel',
+    'chat_conversation',
+    'product',
+    'offering',
+    'quote',
+    'order',
+    'subscription',
+    'service_delivery',
+  ]),
   parent_id: uuid(),
   kind: z.enum(['note', 'system']),
   body: z.string().min(1),
