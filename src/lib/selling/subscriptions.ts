@@ -159,10 +159,17 @@ export async function amendSubscription(input: AmendSubscriptionInput) {
     next.commitment_end_date = input.commitment_end_date;
   }
 
+  // An amendment dated in the future is recorded, not performed: it says what
+  // the subscription will become, and stays unapplied until that date arrives.
+  // Applying it now would both change the agreement early and prorate it
+  // against a period it does not fall in.
+  const scheduled = effective > startOfDay(new Date());
+
   // Only a change to the recurring amount prorates; pausing, renewing, and
   // cancelling at period end do not produce a mid-period charge.
   const newPeriodAmount = periodAmount(next.quantity, next.unit_amount);
   const proratable =
+    !scheduled &&
     ['quantity_change', 'price_change', 'plan_change'].includes(input.amendment_type) &&
     subscription.current_period_start != null &&
     subscription.current_period_end != null;
@@ -184,7 +191,7 @@ export async function amendSubscription(input: AmendSubscriptionInput) {
         subscription_id: subscription.id,
         amendment_type: input.amendment_type,
         effective_date: effective,
-        applied_at: new Date(),
+        applied_at: scheduled ? null : new Date(),
         previous_quantity: subscription.quantity,
         new_quantity: next.quantity,
         previous_unit_amount: subscription.unit_amount,
@@ -205,6 +212,10 @@ export async function amendSubscription(input: AmendSubscriptionInput) {
         created_by_user_id: input.created_by_user_id ?? null,
       },
     });
+
+    if (scheduled) {
+      return { subscription, amendment, proration };
+    }
 
     const updated = await tx.subscription.update({ where: { id: subscription.id }, data: next });
 

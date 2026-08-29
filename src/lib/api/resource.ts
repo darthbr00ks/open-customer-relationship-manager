@@ -25,12 +25,16 @@ const workspaceQuerySchema = z.object({ workspace_id: z.uuid() });
 export const fail = (status: number, detail: unknown) =>
   NextResponse.json({ detail }, { status });
 
-/** Postgres SQLSTATE / Prisma code for a unique constraint violation. */
-export function isUniqueViolation(error: unknown): boolean {
+/**
+ * Whether an error, or anything it wraps, carries one of these Prisma or
+ * Postgres codes. Prisma nests the driver's error under `cause`, so the chain
+ * is walked rather than just the outermost error.
+ */
+function hasErrorCode(error: unknown, codes: readonly string[]): boolean {
   let current: unknown = error;
   for (let depth = 0; current != null && depth < 5; depth += 1) {
     const code = (current as { code?: unknown }).code;
-    if (code === '23505' || code === 'P2002') {
+    if (typeof code === 'string' && codes.includes(code)) {
       return true;
     }
     current = (current as { cause?: unknown }).cause;
@@ -38,13 +42,41 @@ export function isUniqueViolation(error: unknown): boolean {
   return false;
 }
 
-/** Translate thrown errors into the API's error shape. */
+/** Postgres SQLSTATE / Prisma code for a unique constraint violation. */
+export const isUniqueViolation = (error: unknown): boolean =>
+  hasErrorCode(error, ['23505', 'P2002']);
+
+/**
+ * A row referenced by the request does not exist — an `entity_id` that names
+ * nothing, a parent that was deleted between two calls.
+ */
+export const isForeignKeyViolation = (error: unknown): boolean =>
+  hasErrorCode(error, ['23503', 'P2003']);
+
+/** Prisma could not find the row an update or delete named. */
+export const isRecordNotFound = (error: unknown): boolean => hasErrorCode(error, ['P2025']);
+
+/**
+ * Translate thrown errors into the API's error shape.
+ *
+ * Zod checks the shape of a request, not whether the ids in it point at
+ * anything, so the database is the first thing to notice a bad reference. Those
+ * are the client's mistakes and are answered as such: a 500 here would say the
+ * server broke, bury a fixable mistake in the logs, and make the error rate
+ * useless as a signal that something is actually wrong.
+ */
 export function toErrorResponse(error: unknown): NextResponse {
   if (error instanceof z.ZodError) {
     return fail(422, error.issues);
   }
   if (isUniqueViolation(error)) {
     return fail(409, 'Resource already exists');
+  }
+  if (isForeignKeyViolation(error)) {
+    return fail(422, 'A referenced record does not exist');
+  }
+  if (isRecordNotFound(error)) {
+    return fail(404, 'Resource not found');
   }
   console.error(error);
   return fail(500, 'Internal server error');
@@ -115,7 +147,7 @@ export type ResourceDelegate = {
   }): Promise<Row[]>;
   create(args: { data: Row }): Promise<Row>;
   update(args: { where: Row; data: Row }): Promise<Row>;
-  upsert(args: { where: Row; create: Row; update: Row }): Promise<Row>;
+  upsert(args: { where: Row; create: Row; update: Row }): Promise<Row | null>;
   delete(args: { where: Row }): Promise<Row>;
 };
 
@@ -269,6 +301,14 @@ export function itemHandlers(config: ResourceConfig) {
           create: { id: parsedId, ...createData },
           update: updateData,
         });
+        // The id exists, but not in this workspace: the upsert matches nothing
+        // to update and cannot create the id either, and answers with no row.
+        // The same id reads as absent from every other verb here, so it reads
+        // as absent from this one too rather than confirming it exists
+        // somewhere else.
+        if (!row) {
+          return fail(404, `${label} not found`);
+        }
         return NextResponse.json(serializeRow(row, dateOnlyFields));
       } catch (error) {
         return toErrorResponse(error);

@@ -47,11 +47,15 @@ export async function GET(request: Request, context: Context) {
       take: PUBLIC_PAGE_SIZE,
     });
 
-    // Reading the thread is what clears the visitor's unread marker.
-    await prisma.chatConversation.update({
-      where: { id: conversation.id },
-      data: { contact_read_at: new Date() },
-    });
+    // Reading the thread is what clears the visitor's unread marker — but only
+    // when there was something to read. The widget polls this endpoint every
+    // few seconds, and an empty poll has not read anything.
+    if (messages.length > 0) {
+      await prisma.chatConversation.update({
+        where: { id: conversation.id },
+        data: { contact_read_at: new Date() },
+      });
+    }
 
     return publicJson(messages.map(publicMessage), { request, channel });
   } catch (error) {

@@ -53,7 +53,22 @@ export function getJobQueue(): Queue {
   return globalForQueue.jobQueue;
 }
 
+export type EnqueueOptions = {
+  /**
+   * Collapses duplicate work: while a job with this id is queued or running,
+   * adding it again is a no-op that returns the existing job. Use it wherever
+   * many callers can ask for the same result at the same moment.
+   */
+  jobId?: string;
+  /** Overrides the shared retry count for jobs that must not run twice. */
+  attempts?: number;
+};
+
 /** Enqueue a job with a payload checked against `JobPayloads`. */
-export async function enqueue<N extends JobName>(name: N, payload: JobPayloads[N]) {
-  return getJobQueue().add(name, payload);
+export async function enqueue<N extends JobName>(
+  name: N,
+  payload: JobPayloads[N],
+  options: EnqueueOptions = {},
+) {
+  return getJobQueue().add(name, payload, options);
 }

@@ -8,7 +8,7 @@
  * it touches no database so the rules can be tested directly.
  */
 
-import { fromScaled, maxScaled, mulScaled, toScaled, type Decimalish } from './money';
+import { divScaled, fromScaled, maxScaled, mulScaled, toScaled, type Decimalish } from './money';
 
 export type ChargeType = 'one_time' | 'recurring' | 'usage';
 export type PricingModel = 'flat' | 'per_unit' | 'tiered' | 'volume' | 'graduated';
@@ -207,7 +207,9 @@ function graduatedAmount(tiers: { limit: bigint | null; unit: bigint; flat: bigi
 export function discountAmount(subtotal: Decimalish, type: DiscountType | null | undefined, value: Decimalish): string {
   const base = toScaled(subtotal);
   if (!type || value == null || value === '') return '0';
-  const raw = type === 'percentage' ? mulScaled(base, toScaled(value)) / 100n : toScaled(value);
+  // Rounded half away from zero rather than truncated, matching every other
+  // operation in `money.ts`.
+  const raw = type === 'percentage' ? divScaled(mulScaled(base, toScaled(value)), toScaled(100)) : toScaled(value);
   // Never discount past zero, and never turn a credit into a charge.
   const capped = raw < 0n ? 0n : raw > base ? base : raw;
   return fromScaled(capped);

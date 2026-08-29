@@ -124,7 +124,11 @@ function RowFragment<Row extends { id: string }>({
     ? (e: React.KeyboardEvent<HTMLTableRowElement>) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          expand ? onToggle() : onNavigate();
+          if (expand) {
+            onToggle();
+          } else {
+            onNavigate();
+          }
         }
       }
     : undefined;

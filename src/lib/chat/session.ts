@@ -2,7 +2,7 @@ import type { ChatChannel, ChatContact, ChatSession } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
-import { MAX_SESSION_TTL_HOURS, MIN_SESSION_TTL_HOURS } from './config';
+import { ACTIVITY_STAMP_INTERVAL_MS, MAX_SESSION_TTL_HOURS, MIN_SESSION_TTL_HOURS } from './config';
 import { publicFail } from './public';
 import { hashToken, newSessionToken } from './tokens';
 
@@ -18,6 +18,10 @@ export type ChatSessionContext = {
   session: ChatSession;
   contact: ChatContact;
 };
+
+/** Whether an activity stamp is missing or old enough to be worth rewriting. */
+const isStale = (stamp: Date | null, now: Date): boolean =>
+  stamp == null || now.getTime() - stamp.getTime() >= ACTIVITY_STAMP_INTERVAL_MS;
 
 function expiryFor(channel: ChatChannel): Date {
   const hours = Math.min(Math.max(channel.session_ttl_hours, MIN_SESSION_TTL_HOURS), MAX_SESSION_TTL_HOURS);
@@ -74,11 +78,21 @@ export async function resolveSession(
   });
   if (!session) return null;
 
-  const now = new Date();
-  await prisma.chatSession.update({ where: { id: session.id }, data: { last_used_at: now } });
-  await prisma.chatContact.update({ where: { id: session.contact_id }, data: { last_seen_at: now } });
-
   const { contact, ...rest } = session;
+
+  // Refreshed only once the stamp has gone stale. Every poll from the widget
+  // arrives here, and writing on each one would make an idle chat the most
+  // write-heavy thing in the product.
+  const now = new Date();
+  if (isStale(rest.last_used_at, now)) {
+    await prisma.chatSession.update({ where: { id: rest.id }, data: { last_used_at: now } });
+    rest.last_used_at = now;
+  }
+  if (isStale(contact.last_seen_at, now)) {
+    await prisma.chatContact.update({ where: { id: rest.contact_id }, data: { last_seen_at: now } });
+    contact.last_seen_at = now;
+  }
+
   return { session: rest, contact };
 }
 

@@ -1,9 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import type { JobPayloads } from '@/lib/queue';
 import { cacheKey, getRedis } from '@/lib/redis';
+import { SCALE, fromScaled, toScaled } from '@/lib/selling/money';
 
 /** How long a computed report stays served from cache. */
-const CACHE_TTL_SECONDS = 300;
+export const CACHE_TTL_SECONDS = 300;
 
 export type PipelineReport = {
   workspace_id: string;
@@ -14,6 +15,31 @@ export type PipelineReport = {
 
 export const pipelineReportKey = (workspaceId: string) =>
   cacheKey('report', 'pipeline', workspaceId);
+
+/**
+ * Job id used to collapse duplicate requests for one workspace's report.
+ *
+ * BullMQ keeps a finished job under its id for a while, and reusing one id
+ * forever would mean the second computation never runs — the report would
+ * freeze at its first value. So the id carries the cache window it belongs to:
+ * every reader inside one window shares a run, and the window after the cache
+ * expires gets a new id and a fresh run.
+ */
+export const pipelineReportJobId = (workspaceId: string, now: number = Date.now()) =>
+  `${pipelineReportKey(workspaceId)}:${Math.floor(now / (CACHE_TTL_SECONDS * 1000))}`;
+
+/**
+ * Add the per-stage values and render them at the column's own scale.
+ *
+ * Deal amounts are `numeric(18,4)`, so they are summed in fixed point rather
+ * than through `Number` — a pipeline total is money, and money does not go
+ * through binary floating point anywhere else in this codebase.
+ */
+function totalOf(values: string[]): string {
+  const scaled = values.reduce<bigint>((running, value) => running + toScaled(value), 0n);
+  const [whole, fraction = ''] = fromScaled(scaled).split('.');
+  return `${whole}.${fraction.padEnd(SCALE, '0')}`;
+}
 
 /**
  * Summarise open deal value by stage.
@@ -43,12 +69,10 @@ export async function buildPipelineReport(
     }))
     .sort((a, b) => a.stage.localeCompare(b.stage));
 
-  const total = by_stage.reduce((sum, row) => sum + Number(row.value), 0);
-
   const report: PipelineReport = {
     workspace_id: payload.workspace_id,
     generated_at: new Date().toISOString(),
-    total_open_value: total.toFixed(4),
+    total_open_value: totalOf(by_stage.map((row) => row.value)),
     by_stage,
   };
 

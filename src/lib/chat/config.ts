@@ -22,6 +22,16 @@ export const MAX_SESSION_TTL_HOURS = 8760;
 export const PUBLIC_PAGE_SIZE = 200;
 
 /**
+ * How stale a "last seen" stamp may get before it is rewritten.
+ *
+ * The widget polls every few seconds, and stamping every poll turns a read into
+ * three row writes — enough that an idle conversation costs more in write
+ * traffic than an active one does in reads. These timestamps answer "was this
+ * visitor around recently", so minutes of drift costs nothing.
+ */
+export const ACTIVITY_STAMP_INTERVAL_MS = 5 * 60_000;
+
+/**
  * Mailbox providers whose domain says nothing about who the visitor works
  * for, so a conversation from one of them never opens an Entity named after
  * the domain.

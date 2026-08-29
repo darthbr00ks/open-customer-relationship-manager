@@ -479,7 +479,11 @@ recorded quantity onto the entitlement being consumed in the same transaction.
 
 `POST /api/v1/jobs` with `{"job":"import-entities","workspace_id":"…","csv":"…"}`
 bulk-imports entities. Invalid rows are reported with their row number and
-reason rather than failing the whole file.
+reason rather than failing the whole file. The CSV is capped at 5,000,000
+characters — it is held in memory by the request, the queue, and the worker at
+once. An import that fails partway is not retried automatically, because the
+rows already written have no key to write them against twice; the reported
+failure is meant to be fixed and the file re-sent.
 
 ### Errors
 
@@ -488,8 +492,8 @@ Errors return `{ "detail": ... }`:
 | Status | Meaning |
 |---|---|
 | 404 | No such record in this workspace |
-| 409 | Unique constraint violation (e.g. duplicate `case_number`) |
-| 422 | Validation failed; `detail` carries the field-level issues |
+| 409 | Unique constraint violation (e.g. duplicate `case_number`), or a document already acted on (e.g. a quote accepted twice) |
+| 422 | Validation failed; `detail` carries the field-level issues, or a referenced record does not exist |
 
 ## Development
 

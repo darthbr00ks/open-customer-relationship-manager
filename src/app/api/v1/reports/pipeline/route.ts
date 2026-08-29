@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { toErrorResponse } from '@/lib/api/resource';
 import { enqueue } from '@/lib/queue';
 import { getRedis } from '@/lib/redis';
-import { pipelineReportKey } from '@/worker/jobs/pipeline-report';
+import { pipelineReportJobId, pipelineReportKey } from '@/worker/jobs/pipeline-report';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +25,14 @@ export async function GET(request: Request) {
       return NextResponse.json(JSON.parse(cached));
     }
 
-    const job = await enqueue('pipeline-report', { workspace_id });
+    // Keyed on the workspace so a cold cache does not queue one full aggregate
+    // per reader: everyone who arrives before the first run finishes waits on
+    // that run rather than starting another.
+    const job = await enqueue(
+      'pipeline-report',
+      { workspace_id },
+      { jobId: pipelineReportJobId(workspace_id) },
+    );
     return NextResponse.json(
       { detail: 'Report is being generated', job_id: job.id },
       { status: 202 },

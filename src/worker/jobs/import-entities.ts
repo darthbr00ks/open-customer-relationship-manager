@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { parseCsvRecords } from '@/lib/csv';
+import { parseCsvRecordsWithRows } from '@/lib/csv';
 import type { JobPayloads } from '@/lib/queue';
 import { entityCreateSchema } from '@/lib/schemas/resources';
 
@@ -22,10 +22,11 @@ export async function importEntities(
   payload: JobPayloads['import-entities'],
   onProgress?: (percent: number) => Promise<void>,
 ): Promise<ImportResult> {
-  const records = parseCsvRecords(payload.csv);
+  const records = parseCsvRecordsWithRows(payload.csv);
   const result: ImportResult = { received: records.length, imported: 0, skipped: [] };
 
   let batch: Record<string, unknown>[] = [];
+  let reported = 0;
 
   const flush = async () => {
     if (batch.length === 0) {
@@ -38,16 +39,17 @@ export async function importEntities(
 
   for (const [index, record] of records.entries()) {
     const candidate = {
-      ...record,
+      ...record.values,
       workspace_id: payload.workspace_id,
       created_by_user_id: payload.created_by_user_id ?? null,
     };
 
     const parsed = entityCreateSchema.safeParse(candidate);
     if (!parsed.success) {
-      // Row numbers are 1-based and skip the header, matching what the user sees.
+      // The row the user will find in their file, not this record's index:
+      // blank lines are skipped and a quoted field can span several lines.
       result.skipped.push({
-        row: index + 2,
+        row: record.row,
         reason: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '),
       });
       continue;
@@ -56,7 +58,15 @@ export async function importEntities(
     batch.push(parsed.data as Record<string, unknown>);
     if (batch.length >= BATCH_SIZE) {
       await flush();
-      await onProgress?.(Math.round(((index + 1) / records.length) * 100));
+    }
+
+    // Driven by the percentage rather than the batch, so a file smaller than
+    // one batch still moves — and reported only when the number changes, so a
+    // large file does not write progress once per row.
+    const percent = Math.round(((index + 1) / records.length) * 100);
+    if (percent !== reported) {
+      reported = percent;
+      await onProgress?.(percent);
     }
   }
 

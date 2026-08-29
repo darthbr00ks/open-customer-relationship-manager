@@ -256,12 +256,19 @@ export type ProvisioningSummary = {
   backordered: { order_line_id: string; quantity: string }[];
 };
 
+/** The statuses a quote can still be accepted from — every one that is not final. */
+const ACCEPTABLE_QUOTE_STATUSES = ['draft', 'sent'] as const;
+
 /**
  * Accept a quote: open the Order, copy every line's snapshot onto it, and start
  * whatever each line promised.
  *
  * Optional lines the customer did not take are not carried over — they were an
  * offer, not a sale.
+ *
+ * Accepting is once-only. The checks below answer a repeat accept with a clear
+ * error, and the transaction claims the quote before it creates anything, so
+ * two that arrive together cannot both provision.
  */
 export async function acceptQuote(input: AcceptQuoteInput) {
   const { workspace_id } = input;
@@ -285,6 +292,17 @@ export async function acceptQuote(input: AcceptQuoteInput) {
     () => prisma.order.count({ where: { workspace_id } }),
     (order_number) =>
       prisma.$transaction(async (tx) => {
+        // Claim the quote before anything is created. The conditional update is
+        // the lock: a second accept blocks here, then re-reads the committed row
+        // and matches nothing, so it rolls back instead of provisioning again.
+        const claimed = await tx.quote.updateMany({
+          where: { id: quote.id, workspace_id, status: { in: [...ACCEPTABLE_QUOTE_STATUSES] } },
+          data: { status: 'accepted', accepted_at: new Date() },
+        });
+        if (claimed.count !== 1) {
+          throw new SellingError(409, 'Quote has already been accepted');
+        }
+
         const order = await tx.order.create({
           data: {
             workspace_id,
@@ -361,11 +379,6 @@ export async function acceptQuote(input: AcceptQuoteInput) {
 
         const provisioning = await provisionOrder(tx, order, orderLines);
 
-        await tx.quote.update({
-          where: { id: quote.id },
-          data: { status: 'accepted', accepted_at: new Date() },
-        });
-
         return {
           order: await tx.order.update({ where: { id: order.id }, data: totals }),
           lines: orderLines,
@@ -396,7 +409,10 @@ async function provisionOrder(tx: Tx, order: OrderRow, lines: OrderLineRow[]): P
   let subscriptionSequence = await tx.subscription.count({ where: { workspace_id } });
   let deliverySequence = await tx.serviceDelivery.count({ where: { workspace_id } });
 
-  const subscriptionByOffering = new Map<string, string>();
+  // One offering can be sold more than once on an order — the same plan for two
+  // business units, with its own seat count each time — so this holds every
+  // subscription an offering opened, in the order the lines were arranged.
+  const subscriptionsByOffering = new Map<string, string[]>();
 
   for (const line of lines) {
     // The recurring charge is what makes a subscription. A setup fee on the
@@ -434,7 +450,11 @@ async function provisionOrder(tx: Tx, order: OrderRow, lines: OrderLineRow[]): P
         },
       });
       summary.subscriptions.push(subscription.id);
-      if (line.offering_id) subscriptionByOffering.set(line.offering_id, subscription.id);
+      if (line.offering_id) {
+        const opened = subscriptionsByOffering.get(line.offering_id) ?? [];
+        opened.push(subscription.id);
+        subscriptionsByOffering.set(line.offering_id, opened);
+      }
 
       // What was bought (seats, licences, devices) is also what may be used.
       await tx.entitlement.create({
@@ -489,10 +509,22 @@ async function provisionOrder(tx: Tx, order: OrderRow, lines: OrderLineRow[]): P
 
   // A usage charge is an allowance on the subscription it belongs to, priced
   // per unit past whatever the base charge already includes.
+  //
+  // Charges are laid out one deal line at a time, and within a line the
+  // recurring charge always precedes the usage charge, so the nth usage charge
+  // for an offering belongs to the nth subscription that offering opened.
+  const usageSeenForOffering = new Map<string, number>();
+
   for (const line of lines) {
     if (line.charge_type !== 'usage' || !line.offering_id) continue;
-    const subscriptionId = subscriptionByOffering.get(line.offering_id);
-    if (!subscriptionId) continue;
+    const opened = subscriptionsByOffering.get(line.offering_id);
+    if (!opened || opened.length === 0) continue;
+
+    const seen = usageSeenForOffering.get(line.offering_id) ?? 0;
+    usageSeenForOffering.set(line.offering_id, seen + 1);
+    // More usage charges than subscriptions is malformed rather than fatal:
+    // the surplus lands on the last subscription the offering opened.
+    const subscriptionId = opened[Math.min(seen, opened.length - 1)]!;
 
     await tx.entitlement.create({
       data: {
@@ -500,7 +532,7 @@ async function provisionOrder(tx: Tx, order: OrderRow, lines: OrderLineRow[]): P
         subscription_id: subscriptionId,
         entity_id: order.entity_id,
         order_line_id: line.id,
-        code: slugCode(line.name),
+        code: await availableEntitlementCode(tx, subscriptionId, slugCode(line.name)),
         name: line.name,
         unit_of_measure: line.unit_of_measure,
         included_quantity: line.included_quantity,
@@ -513,9 +545,74 @@ async function provisionOrder(tx: Tx, order: OrderRow, lines: OrderLineRow[]): P
   return summary;
 }
 
+/** `code` is unique per subscription, and `varchar(64)` in the column. */
+const ENTITLEMENT_CODE_MAX = 64;
+
+/**
+ * A code the subscription is not already using.
+ *
+ * Two charges on one subscription can slug to the same code — an overage line
+ * named after the unit it meters, say — and that is a naming clash, not a
+ * reason to refuse the order. The clash is resolved here rather than left to
+ * surface as a unique-constraint violation, which the caller would otherwise
+ * mistake for a document-number collision and retry until it gave up.
+ */
+async function availableEntitlementCode(tx: Tx, subscription_id: string, base: string): Promise<string> {
+  const taken = new Set(
+    (await tx.entitlement.findMany({ where: { subscription_id }, select: { code: true } })).map(
+      (row) => row.code,
+    ),
+  );
+  if (!taken.has(base)) return base;
+
+  for (let suffix = 2; suffix <= 99; suffix += 1) {
+    const tail = `_${suffix}`;
+    const candidate = `${base.slice(0, ENTITLEMENT_CODE_MAX - tail.length)}${tail}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  throw new SellingError(422, `Too many charges named "${base}" on one subscription`);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Inventory                                                                   */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Take the stock rows for an offering, locked for this transaction.
+ *
+ * Balances are read, adjusted, and written back, so the read has to hold until
+ * the write lands: without the lock two orders placed at the same moment both
+ * see the same free quantity and the second silently overwrites the first's
+ * hold, which is how stock gets sold twice. `FOR UPDATE` in a fixed order —
+ * oldest row first — serializes them and keeps the ordering consistent between
+ * callers, so two transactions cannot deadlock taking the same rows.
+ *
+ * The lock is taken first and the rows are read after, so the values returned
+ * are whatever the transaction that held the lock committed.
+ */
+async function lockInventoryItems(
+  tx: Tx,
+  workspace_id: string,
+  offering_id: string,
+  { availableOnly = false, locationCode = null }: { availableOnly?: boolean; locationCode?: string | null } = {},
+) {
+  await tx.$queryRaw`
+    SELECT id FROM inventory_item
+    WHERE workspace_id = ${workspace_id}::uuid
+      AND offering_id = ${offering_id}::uuid
+    ORDER BY created_at ASC, id ASC
+    FOR UPDATE`;
+
+  return tx.inventoryItem.findMany({
+    where: {
+      workspace_id,
+      offering_id,
+      ...(availableOnly ? { status: 'available' as const } : {}),
+      ...(locationCode ? { location_code: locationCode } : {}),
+    },
+    orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+  });
+}
 
 /**
  * Hold stock for an order line across whatever locations have it. Reserving
@@ -528,10 +625,7 @@ export async function reserveInventory(
   offering_id: string,
   quantity: string,
 ): Promise<{ reserved: string; shortfall: string }> {
-  const items = await tx.inventoryItem.findMany({
-    where: { workspace_id, offering_id, status: 'available' },
-    orderBy: { created_at: 'asc' },
-  });
+  const items = await lockInventoryItems(tx, workspace_id, offering_id, { availableOnly: true });
 
   let outstanding = toScaled(quantity);
   let reserved = 0n;
@@ -575,6 +669,20 @@ export async function shipShipment(workspace_id: string, shipment_id: string) {
   if (shipment.status === 'canceled') throw new SellingError(409, 'Cannot ship a canceled shipment');
 
   return prisma.$transaction(async (tx) => {
+    // Claim the shipment first, for the same reason a quote is claimed before
+    // it is turned into an order: shipping twice would take the stock twice.
+    const claimed = await tx.shipment.updateMany({
+      where: {
+        id: shipment.id,
+        workspace_id,
+        status: { notIn: ['shipped', 'delivered', 'canceled'] },
+      },
+      data: { status: 'shipped', shipped_at: shipment.shipped_at ?? new Date() },
+    });
+    if (claimed.count !== 1) {
+      throw new SellingError(409, 'Shipment has already been shipped');
+    }
+
     const shipmentLines = await tx.shipmentLine.findMany({ where: { workspace_id, shipment_id } });
     if (shipmentLines.length === 0) throw new SellingError(422, 'Shipment has no lines');
 
@@ -592,20 +700,23 @@ export async function shipShipment(workspace_id: string, shipment_id: string) {
         shipment.ship_from_location_code,
       );
 
-      const fulfilled = toScaled(orderLine.quantity_fulfilled) + toScaled(shipmentLine.quantity);
-      await tx.orderLine.update({
+      // Incremented in the database rather than in memory: two shipments can
+      // cover one order line, and computing the new total here would let the
+      // second one overwrite the first's progress.
+      const tallied = await tx.orderLine.update({
         where: { id: orderLine.id },
+        data: { quantity_fulfilled: { increment: shipmentLine.quantity } },
+      });
+      const fulfilled = toScaled(tallied.quantity_fulfilled);
+      await tx.orderLine.update({
+        where: { id: tallied.id },
         data: {
-          quantity_fulfilled: fromScaled(fulfilled),
-          fulfillment_status: fulfilled >= toScaled(orderLine.quantity) ? 'fulfilled' : 'partially_fulfilled',
+          fulfillment_status: fulfilled >= toScaled(tallied.quantity) ? 'fulfilled' : 'partially_fulfilled',
         },
       });
     }
 
-    const updated = await tx.shipment.update({
-      where: { id: shipment.id },
-      data: { status: 'shipped', shipped_at: shipment.shipped_at ?? new Date() },
-    });
+    const updated = await tx.shipment.findFirstOrThrow({ where: { id: shipment.id } });
 
     return { shipment: updated, order: await rollUpFulfillment(tx, workspace_id, shipment.order_id) };
   });
@@ -621,10 +732,7 @@ async function releaseInventory(
 ) {
   if (!offering_id) return;
 
-  const items = await tx.inventoryItem.findMany({
-    where: { workspace_id, offering_id, ...(locationCode ? { location_code: locationCode } : {}) },
-    orderBy: { created_at: 'asc' },
-  });
+  const items = await lockInventoryItems(tx, workspace_id, offering_id, { locationCode });
 
   let outstanding = toScaled(quantity);
   for (const item of items) {
