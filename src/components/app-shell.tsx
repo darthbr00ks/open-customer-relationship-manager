@@ -1,17 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home } from 'lucide-react';
 
 import { CommandPalette } from '@/components/command-palette';
 import { CreateMenu } from '@/components/create-menu';
 import { DensityControl } from '@/components/density-control';
 import { HelpMenu, NotificationsMenu } from '@/components/notifications-menu';
+import { PrimaryNavigation } from '@/components/primary-navigation';
 import { ThemeControl } from '@/components/theme-control';
 import { UserMenu } from '@/components/user-menu';
-import { cn } from '@/lib/utils';
-import { NAV_OBJECT_ORDER, OBJECTS } from '@/lib/objects';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 /**
@@ -20,7 +17,6 @@ import { useWorkspaceStore } from '@/stores/workspace';
  * that stays constant as the user moves between object workspaces.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const workspaceId = useWorkspaceStore((state) => state.workspaceId);
 
   return (
@@ -34,20 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             open-rm
           </Link>
 
-          <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm">
-            <NavLink href="/" active={pathname === '/'}>
-              <Home className="size-4" /> Home
-            </NavLink>
-            {NAV_OBJECT_ORDER.map((key) => {
-              const object = OBJECTS[key];
-              const Icon = object.icon;
-              return (
-                <NavLink key={key} href={object.routeBase} active={pathname.startsWith(object.routeBase)}>
-                  <Icon className="size-4" /> {object.plural}
-                </NavLink>
-              );
-            })}
-          </nav>
+          <PrimaryNavigation />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <CommandPalette workspaceId={workspaceId} />
@@ -62,21 +45,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
     </div>
-  );
-}
-
-function NavLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'flex items-center gap-1.5 rounded-md px-3 py-1.5 whitespace-nowrap transition-colors',
-        active
-          ? 'bg-accent text-accent-foreground font-medium'
-          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-      )}
-    >
-      {children}
-    </Link>
   );
 }

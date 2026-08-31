@@ -290,3 +290,43 @@ export const noteCreateSchema = z.object({
 });
 
 export const noteUpdateSchema = z.object({ body: noteFields.body }).partial();
+
+/* -------------------------------------------------------------------------- */
+/* Exception Log                                                              */
+/* -------------------------------------------------------------------------- */
+
+const exceptionLogFields = {
+  timestamp: ts(),
+  level: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']),
+  error_code: z.string().trim().min(1).max(100),
+  exception_type: z.string().max(255).nullish(),
+  message: z.string().min(1),
+  correlation_id: z.string().max(255).nullish(),
+  request_id: z.string().max(255).nullish(),
+  user_id: z.string().max(255).nullish(),
+  tenant_id: z.string().max(255).nullish(),
+  entity_id: z.string().max(255).nullish(),
+  operation: z.string().max(255).nullish(),
+  service: z.string().max(255).nullish(),
+  environment: z.string().max(100).nullish(),
+  version: z.string().max(100).nullish(),
+  dependency: z.string().max(255).nullish(),
+  retry_count: z.coerce.number().int().min(0),
+  retryable: z.boolean(),
+  duration_ms: z.coerce.number().int().min(0).nullish(),
+  stack_trace: z.string().nullish(),
+  cause: z.string().nullish(),
+  data: z.string().nullish(),
+};
+
+export const exceptionLogCreateSchema = z.object({
+  ...sharedCreate,
+  ...exceptionLogFields,
+  timestamp: exceptionLogFields.timestamp.default(() => new Date()),
+  retry_count: exceptionLogFields.retry_count.default(0),
+  retryable: exceptionLogFields.retryable.default(false),
+});
+
+export const exceptionLogUpdateSchema = z
+  .object({ ...sharedUpdate, ...exceptionLogFields })
+  .partial();

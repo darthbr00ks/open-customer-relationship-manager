@@ -44,7 +44,8 @@ export function CommandPalette({ workspaceId }: { workspaceId: string | null }) 
   const cases = useCachedList<Record<string, unknown>>('cases', workspaceId);
   const incidents = useCachedList<Record<string, unknown>>('incidents', workspaceId);
   const requests = useCachedList<Record<string, unknown>>('requests', workspaceId);
-  const byResource = { entities, persons, deals, cases, incidents, requests };
+  const exception_logs = useCachedList<Record<string, unknown>>('exception-logs', workspaceId);
+  const byResource = { entities, persons, deals, cases, incidents, requests, exception_logs };
 
   const q = query.trim().toLowerCase();
   const groups = q.length === 0

@@ -1,10 +1,11 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { Archive, ArchiveRestore, CircleCheck, CircleX, Pencil, RefreshCw } from 'lucide-react';
+import { Archive, ArchiveRestore, CircleCheck, CircleX, Mail, Pencil, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 import { NoWorkspace } from '@/components/empty-state';
+import { EmailComposerDialog } from '@/components/email-composer-dialog';
 import { ChangeStageDialog, CloseLostDialog, closeDealWon } from '@/components/deal-stage-dialogs';
 import { RecordFormDialog } from '@/components/record-form-dialog';
 import { RecordHeader, type RecordAction } from '@/components/record-header';
@@ -16,7 +17,7 @@ import { invalidateList, useCachedList } from '@/lib/data-cache';
 import { formatCurrency, formatLabel } from '@/lib/format';
 import { dealStageTone } from '@/lib/schema/deal';
 import { OBJECTS } from '@/lib/objects';
-import type { Deal } from '@/lib/types';
+import type { Deal, Person } from '@/lib/types';
 import { useCurrentUserStore } from '@/stores/current-user';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -28,10 +29,12 @@ export default function DealRecordPage() {
   const currentUser = useCurrentUserStore();
 
   const { rows: deals, loading } = useCachedList<Deal>('deals', workspaceId, { includeArchived: true });
+  const { rows: people } = useCachedList<Person>('persons', workspaceId, { includeArchived: true });
 
   const [editing, setEditing] = useState(false);
   const [changingStage, setChangingStage] = useState(false);
   const [closingLost, setClosingLost] = useState(false);
+  const [emailing, setEmailing] = useState(false);
 
   if (!workspaceId) return <NoWorkspace />;
   const deal = deals.find((row) => row.id === id);
@@ -40,6 +43,7 @@ export default function DealRecordPage() {
   }
 
   const isClosed = deal.stage === 'won' || deal.stage === 'lost';
+  const contact = people.find((person) => person.id === deal.primary_contact_person_id);
 
   const toggleArchive = async () => {
     if (deal.archived_at) await api.update('deals', deal.id, workspaceId, { archived_at: null });
@@ -48,6 +52,7 @@ export default function DealRecordPage() {
   };
 
   const actions: RecordAction[] = [
+    { key: 'email', label: 'Send Email', icon: Mail, onClick: () => setEmailing(true), primary: true },
     { key: 'edit', label: 'Edit', icon: Pencil, onClick: () => setEditing(true), primary: true },
     { key: 'change-stage', label: 'Change Stage', icon: RefreshCw, onClick: () => setChangingStage(true), primary: true },
   ];
@@ -100,6 +105,16 @@ export default function DealRecordPage() {
         <ChangeStageDialog open onOpenChange={setChangingStage} dealId={deal.id} currentStage={deal.stage} workspaceId={workspaceId} />
       ) : null}
       {closingLost ? <CloseLostDialog open onOpenChange={setClosingLost} dealId={deal.id} workspaceId={workspaceId} /> : null}
+      {emailing ? (
+        <EmailComposerDialog
+          open
+          onOpenChange={setEmailing}
+          workspaceId={workspaceId}
+          recipient={contact?.primary_email ?? ''}
+          defaultSubject={deal.name}
+          relatedDealId={deal.id}
+        />
+      ) : null}
     </div>
   );
 }

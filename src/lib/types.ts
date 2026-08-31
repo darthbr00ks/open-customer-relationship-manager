@@ -136,12 +136,36 @@ export type FeatureRequest = SharedFields & {
 export type Note = {
   id: string;
   workspace_id: string;
-  parent_type: 'entity' | 'person' | 'deal' | 'case' | 'incident' | 'request';
+  parent_type: 'entity' | 'person' | 'deal' | 'case' | 'incident' | 'request' | 'exception_log';
   parent_id: string;
   kind: 'note' | 'system';
   body: string;
   created_at: string;
   created_by_user_id: string | null;
+};
+
+export type ExceptionLog = SharedFields & {
+  timestamp: string;
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
+  error_code: string;
+  exception_type: string | null;
+  message: string;
+  correlation_id: string | null;
+  request_id: string | null;
+  user_id: string | null;
+  tenant_id: string | null;
+  entity_id: string | null;
+  operation: string | null;
+  service: string | null;
+  environment: string | null;
+  version: string | null;
+  dependency: string | null;
+  retry_count: number;
+  retryable: boolean;
+  duration_ms: number | null;
+  stack_trace: string | null;
+  cause: string | null;
+  data: string | null;
 };
 
 export type PipelineReport = {

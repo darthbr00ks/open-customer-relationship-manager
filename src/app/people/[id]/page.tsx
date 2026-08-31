@@ -1,10 +1,11 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { Archive, ArchiveRestore, Building2, LifeBuoy, Lightbulb, Pencil } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, LifeBuoy, Lightbulb, Mail, Pencil } from 'lucide-react';
 import { useState } from 'react';
 
 import { AddAffiliationDialog } from '@/components/add-affiliation-dialog';
+import { EmailComposerDialog } from '@/components/email-composer-dialog';
 import { NoWorkspace } from '@/components/empty-state';
 import { FieldValue } from '@/components/fields/field-value';
 import { RecordFormDialog } from '@/components/record-form-dialog';
@@ -35,6 +36,7 @@ export default function PersonRecordPage() {
 
   const [editing, setEditing] = useState(false);
   const [addingAffiliation, setAddingAffiliation] = useState(false);
+  const [emailing, setEmailing] = useState(false);
 
   if (!workspaceId) return <NoWorkspace />;
   const person = people.find((row) => row.id === id);
@@ -52,6 +54,7 @@ export default function PersonRecordPage() {
   };
 
   const actions: RecordAction[] = [
+    { key: 'email', label: 'Send Email', icon: Mail, onClick: () => setEmailing(true), primary: true },
     { key: 'edit', label: 'Edit', icon: Pencil, onClick: () => setEditing(true), primary: true },
     { key: 'add-affiliation', label: 'Add to entity', icon: Building2, onClick: () => setAddingAffiliation(true), primary: true },
     person.archived_at
@@ -141,6 +144,16 @@ export default function PersonRecordPage() {
       ) : null}
       {addingAffiliation ? (
         <AddAffiliationDialog open onOpenChange={setAddingAffiliation} personId={person.id} workspaceId={workspaceId} />
+      ) : null}
+      {emailing ? (
+        <EmailComposerDialog
+          open
+          onOpenChange={setEmailing}
+          workspaceId={workspaceId}
+          recipient={person.primary_email ?? ''}
+          defaultSubject={`Hello ${person.preferred_name ?? person.first_name}`}
+          relatedPersonId={person.id}
+        />
       ) : null}
     </div>
   );

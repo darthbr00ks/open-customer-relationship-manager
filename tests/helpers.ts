@@ -6,6 +6,11 @@ export const uuid = () => randomUUID();
 
 /** Child rows first: the junctions carry FKs back to entity/person/case. */
 export async function resetDatabase() {
+  await prisma.exceptionLog.deleteMany();
+  await prisma.emailMessage.deleteMany();
+  await prisma.emailThread.deleteMany();
+  await prisma.emailAutomationPolicy.deleteMany();
+  await prisma.emailAlias.deleteMany();
   await prisma.incidentCase.deleteMany();
   await prisma.entityPerson.deleteMany();
   await prisma.deal.deleteMany();

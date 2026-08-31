@@ -4,6 +4,7 @@ import {
   LifeBuoy,
   Lightbulb,
   Siren,
+  Bug,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -13,6 +14,7 @@ import type { ResourceName } from '@/lib/api/resources';
 import { CASE_FIELDS, CASE_LAYOUT, CASE_LIST_COLUMNS, CASE_SEARCH_FIELDS } from './schema/case';
 import { DEAL_FIELDS, DEAL_LAYOUT, DEAL_LIST_COLUMNS, DEAL_SEARCH_FIELDS } from './schema/deal';
 import { ENTITY_FIELDS, ENTITY_LAYOUT, ENTITY_LIST_COLUMNS, ENTITY_SEARCH_FIELDS } from './schema/entity';
+import { EXCEPTION_LOG_FIELDS, EXCEPTION_LOG_LAYOUT, EXCEPTION_LOG_LIST_COLUMNS, EXCEPTION_LOG_SEARCH_FIELDS } from './schema/exception-log';
 import {
   INCIDENT_FIELDS,
   INCIDENT_LAYOUT,
@@ -27,10 +29,11 @@ import {
   REQUEST_SEARCH_FIELDS,
 } from './schema/request';
 import type { FieldDef, ObjectLayout } from './schema/types';
+import { DEFAULT_PRIMARY_TAB_ORDER } from './navigation-config';
 
-export type ObjectKey = 'entities' | 'persons' | 'deals' | 'cases' | 'incidents' | 'requests';
+export type ObjectKey = 'entities' | 'persons' | 'deals' | 'cases' | 'incidents' | 'requests' | 'exception_logs';
 
-export type NoteParentType = 'entity' | 'person' | 'deal' | 'case' | 'incident' | 'request';
+export type NoteParentType = 'entity' | 'person' | 'deal' | 'case' | 'incident' | 'request' | 'exception_log';
 
 export type ObjectConfig = {
   key: ObjectKey;
@@ -148,12 +151,28 @@ export const OBJECTS: Record<ObjectKey, ObjectConfig> = {
     searchFields: REQUEST_SEARCH_FIELDS,
     defaults: { status: 'submitted', priority: 'medium' },
   },
+  exception_logs: {
+    key: 'exception_logs',
+    noteParentType: 'exception_log',
+    resource: 'exception-logs',
+    singular: 'Exception Log',
+    plural: 'Exception Logs',
+    routeBase: '/exception-logs',
+    icon: Bug,
+    titleField: 'error_code',
+    subtitleFields: ['level', 'service'],
+    fields: EXCEPTION_LOG_FIELDS,
+    layout: EXCEPTION_LOG_LAYOUT,
+    listColumns: EXCEPTION_LOG_LIST_COLUMNS,
+    searchFields: EXCEPTION_LOG_SEARCH_FIELDS,
+    defaults: { timestamp: new Date().toISOString(), level: 'ERROR', retry_count: 0, retryable: false },
+  },
 };
 
 export const OBJECT_LIST = Object.values(OBJECTS);
 
 /** Objects displayed in the primary navigation, in display order. */
-export const NAV_OBJECT_ORDER: ObjectKey[] = ['entities', 'persons', 'deals', 'cases', 'incidents', 'requests'];
+export const NAV_OBJECT_ORDER: ObjectKey[] = [...DEFAULT_PRIMARY_TAB_ORDER];
 
 /** Reverse lookup so a lookup field's target resource can be rendered as a link to its record page. */
 export function objectKeyForResource(resource: ResourceName): ObjectKey | undefined {

@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/prisma';
 import * as v from '@/lib/schemas/resources';
+import {
+  emailAliasCreateSchema,
+  emailAliasUpdateSchema,
+  emailPolicyCreateSchema,
+  emailPolicyUpdateSchema,
+} from '@/lib/schemas/email';
 
 import type { ResourceConfig, ResourceDelegate } from './resource';
 
@@ -87,6 +93,31 @@ export const resources = {
     orderBy: 'created_at',
     archivable: false,
     filters: ['parent_id'],
+  },
+  'email-aliases': {
+    delegate: delegate(prisma.emailAlias),
+    label: 'EmailAlias',
+    createSchema: emailAliasCreateSchema,
+    updateSchema: emailAliasUpdateSchema,
+    orderBy: 'created_at',
+    archivable: false,
+  },
+  'email-policies': {
+    delegate: delegate(prisma.emailAutomationPolicy),
+    label: 'EmailAutomationPolicy',
+    createSchema: emailPolicyCreateSchema,
+    updateSchema: emailPolicyUpdateSchema,
+    orderBy: 'created_at',
+    archivable: false,
+    filters: ['alias_id', 'profile_id', 'user_id'],
+  },
+  'exception-logs': {
+    delegate: delegate(prisma.exceptionLog),
+    label: 'ExceptionLog',
+    createSchema: v.exceptionLogCreateSchema,
+    updateSchema: v.exceptionLogUpdateSchema,
+    orderBy: 'timestamp',
+    archivable: true,
   },
 } as const satisfies Record<string, ResourceConfig>;
 

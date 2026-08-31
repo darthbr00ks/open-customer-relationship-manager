@@ -10,9 +10,15 @@ datasource db {
   provider = "postgresql"
 }
 
-/* -------------------------------------------------------------------------- */
-/* Enums                                                                       */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Enums
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum EntityType {
   company
@@ -151,54 +157,97 @@ enum NoteParentType {
   case
   incident
   request
+  exception_log
 
   @@map("note_parent_type_enum")
 }
 
 enum NoteKind {
-  /** Hand-written by a user. */
+  /**
+   * Hand-written by a user.
+   */
   note
-  /** Recorded automatically by the app, e.g. a stage change. */
+  /**
+   * Recorded automatically by the app, e.g. a stage change.
+   */
   system
 
   @@map("note_kind_enum")
 }
 
-/* -------------------------------------------------------------------------- */
-/* Models                                                                      */
-/* -------------------------------------------------------------------------- */
+enum EmailPolicyScope {
+  system
+  alias
+  profile
+  user
+
+  @@map("email_policy_scope_enum")
+}
+
+enum EmailRecordType {
+  none
+  case
+  deal
+
+  @@map("email_record_type_enum")
+}
+
+enum EmailOwnerType {
+  user
+  queue
+  round_robin
+
+  @@map("email_owner_type_enum")
+}
+
+enum EmailDirection {
+  inbound
+  outbound
+
+  @@map("email_direction_enum")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Models
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 model Entity {
-  id                  String            @id @default(uuid()) @db.Uuid
-  workspace_id        String            @db.Uuid
-  owner_user_id       String?           @db.Uuid
-  created_at          DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime          @updatedAt @db.Timestamptz(6)
-  created_by_user_id  String?           @db.Uuid
-  updated_by_user_id  String?           @db.Uuid
-  archived_at         DateTime?         @db.Timestamptz(6)
-  name                String            @db.VarChar(255)
-  legal_name          String?           @db.VarChar(255)
-  entity_type         EntityType
-  relationship_stage  RelationshipStage @default(prospect)
-  description         String?           @db.Text
-  website_url         String?           @db.VarChar(2048)
-  primary_domain      String?           @db.VarChar(255)
-  primary_email       String?           @db.VarChar(320)
-  primary_phone       String?           @db.VarChar(50)
-  address_line_1      String?           @db.VarChar(255)
-  address_line_2      String?           @db.VarChar(255)
-  city                String?           @db.VarChar(100)
-  region              String?           @db.VarChar(100)
-  postal_code         String?           @db.VarChar(20)
-  country_code        String?           @db.VarChar(2)
-  notes               String?           @db.Text
+  id                 String            @id @default(uuid()) @db.Uuid
+  workspace_id       String            @db.Uuid
+  owner_user_id      String?           @db.Uuid
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?           @db.Uuid
+  updated_by_user_id String?           @db.Uuid
+  archived_at        DateTime?         @db.Timestamptz(6)
+  name               String            @db.VarChar(255)
+  legal_name         String?           @db.VarChar(255)
+  entity_type        EntityType
+  relationship_stage RelationshipStage @default(prospect)
+  description        String?           @db.Text
+  website_url        String?           @db.VarChar(2048)
+  primary_domain     String?           @db.VarChar(255)
+  primary_email      String?           @db.VarChar(320)
+  primary_phone      String?           @db.VarChar(50)
+  address_line_1     String?           @db.VarChar(255)
+  address_line_2     String?           @db.VarChar(255)
+  city               String?           @db.VarChar(100)
+  region             String?           @db.VarChar(100)
+  postal_code        String?           @db.VarChar(20)
+  country_code       String?           @db.VarChar(2)
+  notes              String?           @db.Text
 
-  entity_persons  EntityPerson[]
-  deals           Deal[]
-  cases           SupportCase[]
-  requests        FeatureRequest[]
-  incident_cases  IncidentCase[]
+  entity_persons EntityPerson[]
+  deals          Deal[]
+  cases          SupportCase[]
+  requests       FeatureRequest[]
+  incident_cases IncidentCase[]
 
   @@index([workspace_id, name], map: "ix_entity_workspace_name")
   @@index([workspace_id, relationship_stage], map: "ix_entity_workspace_stage")
@@ -209,22 +258,22 @@ model Entity {
 }
 
 model Person {
-  id                  String    @id @default(uuid()) @db.Uuid
-  workspace_id        String    @db.Uuid
-  owner_user_id       String?   @db.Uuid
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
-  created_by_user_id  String?   @db.Uuid
-  updated_by_user_id  String?   @db.Uuid
-  archived_at         DateTime? @db.Timestamptz(6)
-  first_name          String    @db.VarChar(100)
-  last_name           String?   @db.VarChar(100)
-  preferred_name      String?   @db.VarChar(100)
-  primary_email       String?   @db.VarChar(320)
-  primary_phone       String?   @db.VarChar(50)
-  linkedin_url        String?   @db.VarChar(2048)
-  description         String?   @db.Text
-  notes               String?   @db.Text
+  id                 String    @id @default(uuid()) @db.Uuid
+  workspace_id       String    @db.Uuid
+  owner_user_id      String?   @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?   @db.Uuid
+  updated_by_user_id String?   @db.Uuid
+  archived_at        DateTime? @db.Timestamptz(6)
+  first_name         String    @db.VarChar(100)
+  last_name          String?   @db.VarChar(100)
+  preferred_name     String?   @db.VarChar(100)
+  primary_email      String?   @db.VarChar(320)
+  primary_phone      String?   @db.VarChar(50)
+  linkedin_url       String?   @db.VarChar(2048)
+  description        String?   @db.Text
+  notes              String?   @db.Text
 
   entity_persons EntityPerson[]
   cases          SupportCase[]
@@ -283,7 +332,8 @@ model Deal {
   lost_reason               String?   @db.Text
   notes                     String?   @db.Text
 
-  entity Entity @relation(fields: [entity_id], references: [id])
+  entity        Entity        @relation(fields: [entity_id], references: [id])
+  email_threads EmailThread[]
 
   @@index([workspace_id, entity_id], map: "ix_deal_workspace_entity")
   @@index([workspace_id, stage], map: "ix_deal_workspace_stage")
@@ -317,6 +367,7 @@ model SupportCase {
   entity             Entity?        @relation(fields: [entity_id], references: [id])
   reported_by_person Person?        @relation(fields: [reported_by_person_id], references: [id])
   incident_cases     IncidentCase[]
+  email_threads      EmailThread[]
 
   @@unique([workspace_id, case_number], map: "uq_case_number")
   @@index([workspace_id, status], map: "ix_case_workspace_status")
@@ -410,7 +461,9 @@ model FeatureRequest {
   @@map("request")
 }
 
-/** A user-authored note or system event in a record's activity timeline. */
+/**
+ * A user-authored note or system event in a record's activity timeline.
+ */
 model Note {
   id                 String         @id @default(uuid()) @db.Uuid
   workspace_id       String         @db.Uuid
@@ -423,4 +476,153 @@ model Note {
 
   @@index([workspace_id, parent_type, parent_id], map: "ix_note_parent")
   @@map("note")
+}
+
+/**
+ * Structured operational error captured by services or entered by a user.
+ */
+model ExceptionLog {
+  id                 String    @id @default(uuid()) @db.Uuid
+  workspace_id       String    @db.Uuid
+  owner_user_id      String?   @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?   @db.Uuid
+  updated_by_user_id String?   @db.Uuid
+  archived_at        DateTime? @db.Timestamptz(6)
+  timestamp          DateTime  @default(now()) @db.Timestamptz(6)
+  level              String    @db.VarChar(20)
+  error_code         String    @db.VarChar(100)
+  exception_type     String?   @db.VarChar(255)
+  message            String    @db.Text
+  correlation_id     String?   @db.VarChar(255)
+  request_id         String?   @db.VarChar(255)
+  user_id            String?   @db.VarChar(255)
+  tenant_id          String?   @db.VarChar(255)
+  entity_id          String?   @db.VarChar(255)
+  operation          String?   @db.VarChar(255)
+  service            String?   @db.VarChar(255)
+  environment        String?   @db.VarChar(100)
+  version            String?   @db.VarChar(100)
+  dependency         String?   @db.VarChar(255)
+  retry_count        Int       @default(0)
+  retryable          Boolean   @default(false)
+  duration_ms        Int?
+  stack_trace        String?   @db.Text
+  cause              String?   @db.Text
+  data               String?   @db.Text
+
+  @@index([workspace_id, timestamp], map: "ix_exception_log_workspace_timestamp")
+  @@index([workspace_id, level, error_code], map: "ix_exception_log_level_code")
+  @@index([workspace_id, correlation_id], map: "ix_exception_log_correlation")
+  @@index([workspace_id, service], map: "ix_exception_log_service")
+  @@map("exception_log")
+}
+
+/**
+ * A managed inbound address. Being an endpoint does not imply automation.
+ */
+model EmailAlias {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspace_id  String   @db.Uuid
+  email_address String   @db.VarChar(320)
+  display_name  String?  @db.VarChar(255)
+  active        Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  policies EmailAutomationPolicy[]
+  messages EmailMessage[]
+
+  @@unique([workspace_id, email_address], map: "uq_email_alias_address")
+  @@index([workspace_id, active], map: "ix_email_alias_workspace_active")
+  @@map("email_alias")
+}
+
+/**
+ * Independent policy object so email behavior can grow without bloating identity models.
+ */
+model EmailAutomationPolicy {
+  id                      String           @id @default(uuid()) @db.Uuid
+  workspace_id            String           @db.Uuid
+  scope_type              EmailPolicyScope
+  alias_id                String?          @db.Uuid
+  profile_id              String?          @db.Uuid
+  user_id                 String?          @db.Uuid
+  enabled                 Boolean          @default(false)
+  record_type             EmailRecordType  @default(none)
+  only_create_for_net_new Boolean          @default(true)
+  default_owner_type      EmailOwnerType?
+  default_owner_id        String?          @db.Uuid
+  created_at              DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime         @updatedAt @db.Timestamptz(6)
+
+  alias EmailAlias? @relation(fields: [alias_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, scope_type, alias_id], map: "uq_email_policy_alias")
+  @@unique([workspace_id, scope_type, profile_id], map: "uq_email_policy_profile")
+  @@unique([workspace_id, scope_type, user_id], map: "uq_email_policy_user")
+  @@index([workspace_id, scope_type], map: "ix_email_policy_scope")
+  @@map("email_automation_policy")
+}
+
+/**
+ * Stable CRM conversation, matched by opaque reference or standard mail headers.
+ */
+model EmailThread {
+  id                    String          @id @default(uuid()) @db.Uuid
+  workspace_id          String          @db.Uuid
+  external_reference_id String          @db.VarChar(64)
+  related_record_type   EmailRecordType @default(none)
+  related_record_id     String?         @db.Uuid
+  case_id               String?         @db.Uuid
+  deal_id               String?         @db.Uuid
+  participants          String[]
+  created_at            DateTime        @default(now()) @db.Timestamptz(6)
+  last_message_at       DateTime        @default(now()) @db.Timestamptz(6)
+
+  case     SupportCase?   @relation(fields: [case_id], references: [id])
+  deal     Deal?          @relation(fields: [deal_id], references: [id])
+  messages EmailMessage[]
+
+  @@unique([workspace_id, external_reference_id], map: "uq_email_thread_reference")
+  @@index([workspace_id, related_record_type, related_record_id], map: "ix_email_thread_record")
+  @@map("email_thread")
+}
+
+/**
+ * Normalized email metadata; raw MIME belongs in object storage via raw_storage_key.
+ */
+model EmailMessage {
+  id                    String          @id @default(uuid()) @db.Uuid
+  workspace_id          String          @db.Uuid
+  provider              String          @db.VarChar(50)
+  external_message_id   String          @db.VarChar(998)
+  thread_id             String?         @db.Uuid
+  direction             EmailDirection  @default(inbound)
+  from_address          String          @db.VarChar(320)
+  to_addresses          String[]
+  cc_addresses          String[]
+  bcc_addresses         String[]
+  subject               String          @db.VarChar(998)
+  text_body             String?         @db.Text
+  html_body             String?         @db.Text
+  in_reply_to           String?         @db.VarChar(998)
+  reference_message_ids String[]
+  received_alias_id     String?         @db.Uuid
+  received_user_id      String?         @db.Uuid
+  related_record_type   EmailRecordType @default(none)
+  related_record_id     String?         @db.Uuid
+  raw_headers           Json?
+  raw_storage_key       String?         @db.VarChar(2048)
+  received_at           DateTime        @db.Timestamptz(6)
+  created_at            DateTime        @default(now()) @db.Timestamptz(6)
+
+  thread         EmailThread? @relation(fields: [thread_id], references: [id])
+  received_alias EmailAlias?  @relation(fields: [received_alias_id], references: [id])
+
+  @@unique([workspace_id, provider, external_message_id], map: "uq_email_message_provider_id")
+  @@index([workspace_id, in_reply_to], map: "ix_email_message_in_reply_to")
+  @@index([workspace_id, thread_id, received_at], map: "ix_email_message_thread")
+  @@map("email_message")
 }

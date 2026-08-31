@@ -144,6 +144,18 @@ parameter (on create, `workspace_id` is part of the body).
 | Incident-Case links | `/api/v1/incident-cases` |
 | Requests | `/api/v1/requests` |
 | Notes | `/api/v1/notes` |
+| Email aliases | `/api/v1/email-aliases` |
+| Email automation policies | `/api/v1/email-policies` |
+| Exception logs | `/api/v1/exception-logs` |
+
+Normalized provider adapters submit inbound messages to `POST /api/v1/email/inbound`.
+The endpoint always stores the email, de-duplicates on
+`workspace_id + provider + external_message_id`, resolves an existing thread
+from `X-OpenRM-Thread-ID`, `ref:crm:<id>`, `In-Reply-To`, or `References`, and
+only applies record-creation policy to a net-new conversation. Managed aliases
+use alias policy (then system default); direct delivery resolves user, profile,
+then system policy. Raw MIME content should be stored externally and referenced
+with `raw_storage_key`.
 
 Each resource supports:
 
