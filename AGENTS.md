@@ -107,6 +107,53 @@ Do not scatter this UUID throughout the codebase. Use the shared demo workspace 
 
 ---
 
+# Guardrails for Non-Technical Builders
+
+Some contributors to this repo build features primarily by directing an AI coding agent rather than writing code by hand. These guardrails exist so that kind of contribution is safe by default, without requiring deep git/TypeScript/Postgres knowledge. Agents: apply these on behalf of a non-technical builder even if they don't ask for them by name.
+
+## Always Work on a Branch, Never Directly on `main`
+
+- Before starting anything new, branch off an up-to-date `main` (see Agentic Coding Workflow > Sync below) rather than reusing an old branch or working on `main` itself.
+- Never commit directly to `main`.
+- Never force-push (`git push --force` / `--force-with-lease`) to a shared branch. If a push is rejected, that means someone else's work is on the remote — sync it in (see Sync), don't overwrite it.
+- One feature or fix per branch. Don't pile unrelated changes onto a branch that's already out for review.
+
+## Get a Review Before Merging
+
+- Don't merge your own pull request, even if all checks pass.
+- This matters most for anything touching `prisma/schema.prisma`, migrations, authentication/authorization, billing, or anything that deletes or bulk-modifies data — call these out explicitly in the PR description and wait for a maintainer, don't just let them pass silently in a larger diff.
+
+## When Something Feels Uncertain, Stop and Ask
+
+Don't guess. Ask a maintainer before:
+
+- Running any command with `--force`, `DROP`, `DELETE`, `TRUNCATE`, or `migrate reset` against anything other than your own local `open_rm`/`open_rm_test` databases.
+- Editing a Prisma migration file that has already been committed — migrations are append-only (see Prisma and PostgreSQL > Migrations); the fix for a bad migration is a new migration, not an edit to an old one.
+- Adding a new npm dependency.
+- Changing `.env.example`, CI/CD config, or deployment configuration.
+- Touching code outside the feature you were asked to build.
+
+"I wasn't sure, so I stopped and asked" is always an acceptable outcome — a wrong guess in any of the above is much more expensive to undo.
+
+## Trust the Automated Checks, But Confirm You Actually Ran Them
+
+Before asking for review, confirm all of these pass locally (see Agentic Coding Workflow > Verify):
+
+```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+```
+
+A green run of these does not by itself mean a feature is `READY` — see Feature Status below, documentation and testing depth still matter — but a red run means it is not ready for review.
+
+## Secrets
+
+Never paste real API keys, passwords, or tokens into code, commit messages, PR descriptions, or a prompt asking an agent to "just hardcode this for now." Real secrets belong only in your local `.env` (already gitignored) or a proper secret store — ask a maintainer how to get local values if `.env.example` isn't enough.
+
+---
+
 # Feature Status: WIP vs READY
 
 Every non-trivial feature must have an explicit status.
@@ -998,7 +1045,25 @@ Temporary behavior may exist in a `READY` feature only when it is an intentional
 
 For non-trivial tasks, use this sequence.
 
-## 1. Understand
+## 1. Sync
+
+**Before starting any new functionality**, make sure the local repo is current with `main`. Skipping this is how avoidable merge conflicts and duplicated work happen — it has already happened once in this repo.
+
+```bash
+git fetch origin
+git log --oneline HEAD..origin/main
+```
+
+If that log shows commits, `main` has moved since you last synced. Bring it in before writing new code, not after:
+
+- Starting fresh work: `git checkout main && git pull origin main && git checkout -b <branch-name>`.
+- Continuing on an existing branch: `git fetch origin && git merge origin/main` (or `git rebase origin/main` if you're comfortable resolving rebase conflicts).
+
+If a merge/rebase produces conflicts you don't understand — especially in `prisma/schema.prisma`, migrations, or files you didn't author — stop and ask rather than guessing at a resolution. See Guardrails for Non-Technical Builders above.
+
+Also check whether `npm run dev` / `npm run worker` are already running before starting new ones (`curl -s -o /dev/null -w '%{http_code}' localhost:3000`) — don't double-start and hit `EADDRINUSE`.
+
+## 2. Understand
 
 Inspect:
 
@@ -1010,7 +1075,7 @@ Inspect:
 
 Do not assume the requested feature is isolated.
 
-## 2. Plan
+## 3. Plan
 
 Identify:
 
@@ -1026,7 +1091,7 @@ Identify:
 - configuration
 - operational concerns
 
-## 3. Implement Incrementally
+## 4. Implement Incrementally
 
 Prefer small coherent changes.
 
@@ -1034,13 +1099,13 @@ Keep the system runnable when practical.
 
 Avoid speculative rewrites.
 
-## 4. Test
+## 5. Test
 
 Add tests as part of implementation.
 
 Testing is not optional polish.
 
-## 5. Document
+## 6. Document
 
 Create or update:
 
@@ -1048,7 +1113,7 @@ Create or update:
 
 Documentation must be complete before the feature can become `READY`.
 
-## 6. Verify
+## 7. Verify
 
 Run the repository's actual scripts:
 
@@ -1063,7 +1128,7 @@ Use the scripts defined in `package.json`. Do not invent commands when the repos
 
 For schema changes, validate Prisma generation/migrations using the repository's established workflow (`npm run db:generate`, `npm run db:migrate:dev`).
 
-## 7. Report Status
+## 8. Report Status
 
 Finish every non-trivial agent task with exactly one explicit feature status:
 
@@ -1107,6 +1172,8 @@ Do not leave status ambiguous.
 
 Agents must not:
 
+- start implementing new functionality without first syncing the local branch with `origin/main` (see Agentic Coding Workflow > Sync)
+- force-push to a shared branch, or merge their own pull request, on behalf of a non-technical builder
 - mark work `READY` because only the happy path works
 - skip documentation to save time
 - leave failing tests unmentioned
