@@ -56,8 +56,8 @@ export async function requestAuthCode(channel: ChatChannel, rawEmail: string): P
     data: { consumed_at: new Date() },
   });
 
-  // Delivery runs on the worker. There is no mail provider configured in this
-  // repo, so the job logs the code; a deployment replaces that one job.
+  // Delivery runs on the worker, through the same `EmailProvider` the CRM
+  // composes with; with no mailbox connected the job logs the code instead.
   try {
     await enqueue('chat-auth-code', {
       workspace_id: channel.workspace_id,

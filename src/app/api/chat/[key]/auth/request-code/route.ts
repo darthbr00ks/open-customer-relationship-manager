@@ -44,7 +44,7 @@ export async function POST(request: Request, context: Context) {
       {
         sent: true,
         expires_at: result.expires_at.toISOString(),
-        // Present only outside production, where no mail provider is wired up.
+        // Present only outside production, or where no mailbox is connected.
         ...(result.code ? { debug_code: result.code } : {}),
       },
       { status: 202, request, channel },

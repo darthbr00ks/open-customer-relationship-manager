@@ -1,4 +1,5 @@
 import { AppShell } from '@/components/app-shell';
+import { SessionProvider } from '@/components/session-provider';
 
 /**
  * The signed-in CRM: every screen a workspace's own users see, wrapped in the
@@ -7,5 +8,12 @@ import { AppShell } from '@/components/app-shell';
  * navigation with it.
  */
 export default function CrmLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <>
+      {/* Reports who is signed in into the client store the whole shell reads.
+          Scoped to this group: the chat widget has visitors, not CRM users. */}
+      <SessionProvider />
+      <AppShell>{children}</AppShell>
+    </>
+  );
 }

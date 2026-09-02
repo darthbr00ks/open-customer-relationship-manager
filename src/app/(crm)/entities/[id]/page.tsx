@@ -6,6 +6,7 @@ import { Archive, ArchiveRestore, Building2, LayoutGrid, LifeBuoy, Lightbulb, Ma
 import { useState } from 'react';
 
 import { AddPersonDialog } from '@/components/add-person-dialog';
+import { ComposeEmailDialog } from '@/components/compose-email-dialog';
 import { FieldValue } from '@/components/fields/field-value';
 import { NoWorkspace } from '@/components/empty-state';
 import { RecordFormDialog } from '@/components/record-form-dialog';
@@ -42,6 +43,7 @@ export default function EntityRecordPage() {
   const [editing, setEditing] = useState(false);
   const [addingPerson, setAddingPerson] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
+  const [composing, setComposing] = useState(false);
   // A suggested number, generated at click time (not during render) and editable before saving.
   const [newCaseNumber, setNewCaseNumber] = useState<string | null>(null);
   const [newRequestNumber, setNewRequestNumber] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export default function EntityRecordPage() {
     { key: 'edit', label: 'Edit', icon: Pencil, onClick: () => setEditing(true), primary: true },
     { key: 'add-person', label: 'Add Person', icon: Users, onClick: () => setAddingPerson(true), primary: true },
     { key: 'create-deal', label: 'Create Deal', icon: LayoutGrid, onClick: () => setCreatingDeal(true), primary: true },
+    { key: 'email', label: 'Email', icon: Mail, onClick: () => setComposing(true) },
     { key: 'create-case', label: 'Create Case', icon: LifeBuoy, onClick: () => setNewCaseNumber(genCaseNumber()) },
     { key: 'create-request', label: 'Create Request', icon: Lightbulb, onClick: () => setNewRequestNumber(genRequestNumber()) },
     entity.archived_at
@@ -211,6 +214,16 @@ export default function EntityRecordPage() {
       ) : null}
       {creatingDeal ? (
         <RecordFormDialog open onOpenChange={setCreatingDeal} objectKey="deals" mode="create" workspaceId={workspaceId} initialValues={{ entity_id: entity.id }} lockedFields={['entity_id']} />
+      ) : null}
+      {composing ? (
+        <ComposeEmailDialog
+          open
+          onOpenChange={setComposing}
+          workspaceId={workspaceId}
+          to={entity.primary_email}
+          parentType="entity"
+          parentId={entity.id}
+        />
       ) : null}
       {newCaseNumber ? (
         <RecordFormDialog

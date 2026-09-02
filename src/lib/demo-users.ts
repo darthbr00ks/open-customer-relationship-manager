@@ -1,10 +1,11 @@
 /**
- * There is no `User` table — this app has no authentication yet (see README
- * "Known gaps"). `owner_user_id` / `created_by_user_id` / `updated_by_user_id`
- * are free-floating uuids, so this is a small fixed directory the UI and the
- * seed script both use to turn those ids into names like "Hector" or "Sarah"
- * instead of raw uuids. [[current-user]] extends it with "whoever is using
- * this browser right now."
+ * A small fixed directory of names for the seed data.
+ *
+ * Real users now live in `app_user` and arrive from the identity provider (see
+ * README "Signing in"), but the seed script stamps `owner_user_id` /
+ * `created_by_user_id` with fixed uuids that belong to nobody — so this is what
+ * turns those into "Hector" or "Sarah" instead of raw uuids on a fresh install.
+ * [[current-user]] extends it with "whoever is using this browser right now."
  */
 export const DEMO_USERS = [
   { id: '11111111-1111-4111-8111-111111111111', name: 'Hector Medina' },

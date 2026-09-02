@@ -1,9 +1,10 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { Archive, ArchiveRestore, CircleCheck, Pencil, Siren } from 'lucide-react';
+import { Archive, ArchiveRestore, CircleCheck, Mail, Pencil, Siren } from 'lucide-react';
 import { useState } from 'react';
 
+import { ComposeEmailDialog } from '@/components/compose-email-dialog';
 import { NoWorkspace } from '@/components/empty-state';
 import { RecordFormDialog } from '@/components/record-form-dialog';
 import { RecordHeader, type RecordAction } from '@/components/record-header';
@@ -22,7 +23,7 @@ import { formatLabel } from '@/lib/format';
 import { casePriorityTone, caseStatusTone } from '@/lib/schema/case';
 import { incidentSeverityTone } from '@/lib/schema/incident';
 import { OBJECTS } from '@/lib/objects';
-import type { Incident, IncidentCase, SupportCase } from '@/lib/types';
+import type { Incident, IncidentCase, Person, SupportCase } from '@/lib/types';
 import { useCurrentUserStore } from '@/stores/current-user';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -36,9 +37,13 @@ export default function CaseRecordPage() {
   const { rows: cases, loading } = useCachedList<SupportCase>('cases', workspaceId, { includeArchived: true });
   const { rows: incidentCases } = useCachedList<IncidentCase>('incident-cases', workspaceId, { limit: 200 });
   const { rows: incidents } = useCachedList<Incident>('incidents', workspaceId, { includeArchived: true });
+  // Only to pre-fill the composer with the reporter's address; the case itself
+  // stores a person id, not an address.
+  const { rows: people } = useCachedList<Person>('persons', workspaceId, { includeArchived: true });
 
   const [editing, setEditing] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [composing, setComposing] = useState(false);
 
   if (!workspaceId) return <NoWorkspace />;
   const supportCase = cases.find((row) => row.id === id);
@@ -61,6 +66,7 @@ export default function CaseRecordPage() {
   if (supportCase.status !== 'resolved' && supportCase.status !== 'closed') {
     actions.push({ key: 'resolve', label: 'Resolve', icon: CircleCheck, onClick: () => setResolving(true), primary: true });
   }
+  actions.push({ key: 'email', label: 'Email', icon: Mail, onClick: () => setComposing(true) });
   actions.push(
     supportCase.archived_at
       ? { key: 'unarchive', label: 'Unarchive', icon: ArchiveRestore, onClick: () => void toggleArchive() }
@@ -125,6 +131,17 @@ export default function CaseRecordPage() {
 
       {editing ? (
         <RecordFormDialog open onOpenChange={setEditing} objectKey="cases" mode="edit" workspaceId={workspaceId} recordId={supportCase.id} initialValues={supportCase} />
+      ) : null}
+      {composing ? (
+        <ComposeEmailDialog
+          open
+          onOpenChange={setComposing}
+          workspaceId={workspaceId}
+          to={people.find((person) => person.id === supportCase.reported_by_person_id)?.primary_email}
+          parentType="case"
+          parentId={supportCase.id}
+          subject={`Re: [${supportCase.case_number}] ${supportCase.subject}`}
+        />
       ) : null}
       {resolving ? (
         <ResolveDialog

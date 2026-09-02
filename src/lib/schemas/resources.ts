@@ -250,23 +250,29 @@ export const requestUpdateSchema = z.object({ ...sharedUpdate, ...requestFields 
 /* Note                                                                        */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * What a note — and an email — can be filed against. Exported because outbound
+ * mail lands on the same timelines and must accept exactly the same set.
+ */
+export const NOTE_PARENT_TYPES = [
+  'entity',
+  'person',
+  'deal',
+  'case',
+  'incident',
+  'request',
+  'chat_channel',
+  'chat_conversation',
+  'product',
+  'offering',
+  'quote',
+  'order',
+  'subscription',
+  'service_delivery',
+] as const;
+
 const noteFields = {
-  parent_type: z.enum([
-    'entity',
-    'person',
-    'deal',
-    'case',
-    'incident',
-    'request',
-    'chat_channel',
-    'chat_conversation',
-    'product',
-    'offering',
-    'quote',
-    'order',
-    'subscription',
-    'service_delivery',
-  ]),
+  parent_type: z.enum(NOTE_PARENT_TYPES),
   parent_id: uuid(),
   kind: z.enum(['note', 'system']),
   body: z.string().min(1),

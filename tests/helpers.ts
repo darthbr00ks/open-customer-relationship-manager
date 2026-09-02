@@ -6,6 +6,12 @@ export const uuid = () => randomUUID();
 
 /** Child rows first: the junctions, chat, and selling tables carry FKs back to entity/person/case/deal. */
 export async function resetDatabase() {
+  // Email, deepest first: a message points at the mailbox that sent it, and a
+  // mailbox at the user who connected it.
+  await prisma.emailMessage.deleteMany();
+  await prisma.emailAccount.deleteMany();
+  await prisma.appUser.deleteMany();
+
   // Selling, deepest first: usage hangs off entitlements, which hang off
   // subscriptions, which point back at order lines, orders, and the catalog.
   await prisma.usageRecord.deleteMany();

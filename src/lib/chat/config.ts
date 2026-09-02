@@ -50,9 +50,10 @@ export const CONSUMER_EMAIL_DOMAINS = new Set([
 /**
  * Whether the API may hand a verification code straight back to the caller.
  *
- * There is no mail provider wired up (see README), so outside production the
- * code is returned in the response and logged by the worker; that is what
- * makes the authenticated flow usable on a laptop. Setting
+ * Codes are emailed through the workspace's connected mailbox when there is one
+ * (see README "Email"). With none connected the worker logs the code instead,
+ * so outside production it is also returned in the response — that is what makes
+ * the authenticated flow usable on a laptop with no Google project. Setting
  * `CHAT_RETURN_AUTH_CODE=false` turns it off even in development.
  */
 export function returnsAuthCodeInResponse(): boolean {

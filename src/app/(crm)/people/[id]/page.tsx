@@ -1,10 +1,11 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { Archive, ArchiveRestore, Building2, LifeBuoy, Lightbulb, Pencil } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, LifeBuoy, Lightbulb, Mail, Pencil } from 'lucide-react';
 import { useState } from 'react';
 
 import { AddAffiliationDialog } from '@/components/add-affiliation-dialog';
+import { ComposeEmailDialog } from '@/components/compose-email-dialog';
 import { NoWorkspace } from '@/components/empty-state';
 import { FieldValue } from '@/components/fields/field-value';
 import { RecordFormDialog } from '@/components/record-form-dialog';
@@ -35,6 +36,7 @@ export default function PersonRecordPage() {
 
   const [editing, setEditing] = useState(false);
   const [addingAffiliation, setAddingAffiliation] = useState(false);
+  const [composing, setComposing] = useState(false);
 
   if (!workspaceId) return <NoWorkspace />;
   const person = people.find((row) => row.id === id);
@@ -53,6 +55,8 @@ export default function PersonRecordPage() {
 
   const actions: RecordAction[] = [
     { key: 'edit', label: 'Edit', icon: Pencil, onClick: () => setEditing(true), primary: true },
+    // Primary on a Person: emailing a contact is the commonest thing to do from here.
+    { key: 'email', label: 'Email', icon: Mail, onClick: () => setComposing(true), primary: true },
     { key: 'add-affiliation', label: 'Add to entity', icon: Building2, onClick: () => setAddingAffiliation(true), primary: true },
     person.archived_at
       ? { key: 'unarchive', label: 'Unarchive', icon: ArchiveRestore, onClick: () => void toggleArchive() }
@@ -141,6 +145,16 @@ export default function PersonRecordPage() {
       ) : null}
       {addingAffiliation ? (
         <AddAffiliationDialog open onOpenChange={setAddingAffiliation} personId={person.id} workspaceId={workspaceId} />
+      ) : null}
+      {composing ? (
+        <ComposeEmailDialog
+          open
+          onOpenChange={setComposing}
+          workspaceId={workspaceId}
+          to={person.primary_email}
+          parentType="person"
+          parentId={person.id}
+        />
       ) : null}
     </div>
   );

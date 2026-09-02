@@ -1955,3 +1955,176 @@ model ServiceMilestone {
   @@index([workspace_id, service_delivery_id], map: "ix_service_milestone_delivery")
   @@map("service_milestone")
 }
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Identity and email
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * A CRM user, as far as this app is concerned.
+ * Every record already carries `owner_user_id` / `created_by_user_id` uuids;
+ * this table is what finally gives them a referent. An identity provider names
+ * its users however it likes (Auth0 hands out `auth0|65f0...`, `google-oauth2|1170...`),
+ * so the external subject is stored beside a uuid that this app mints once and
+ * never changes. Swapping providers therefore rewrites `auth_provider` /
+ * `external_id` for a person and leaves every record they own untouched.
+ */
+model AppUser {
+  id            String    @id @default(uuid()) @db.Uuid
+  /**
+   * Which `AuthProvider` vouched for this user — "auth0", "dev", ...
+   */
+  auth_provider String    @db.VarChar(50)
+  /**
+   * The provider's stable identifier for them (the OIDC `sub` claim).
+   */
+  external_id   String    @db.VarChar(255)
+  email         String?   @db.VarChar(320)
+  name          String?   @db.VarChar(255)
+  picture_url   String?   @db.VarChar(2048)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+  last_login_at DateTime? @db.Timestamptz(6)
+
+  email_accounts EmailAccount[]
+
+  @@unique([auth_provider, external_id], map: "uq_app_user_provider_subject")
+  @@index([email], map: "ix_app_user_email")
+  @@map("app_user")
+}
+
+enum EmailAccountStatus {
+  /**
+   * Holds a usable token (or one that refreshes cleanly).
+   */
+  connected
+  /**
+   * The refresh token was rejected — the user has to grant access again.
+   */
+  needs_reauth
+  /**
+   * Disconnected here; the row is kept so sent mail still has a sender.
+   */
+  disconnected
+
+  @@map("email_account_status_enum")
+}
+
+/**
+ * A mailbox the CRM may send through, and the OAuth grant that lets it.
+ * `provider` names the `EmailProvider` implementation that owns the row rather
+ * than being an enum, so adding Microsoft 365 or an SMTP relay is a new file in
+ * `src/lib/email/providers` and no migration. Tokens are encrypted at rest
+ * (`src/lib/crypto.ts`); nothing outside `src/lib/email/accounts.ts` reads them.
+ */
+model EmailAccount {
+  id                      String             @id @default(uuid()) @db.Uuid
+  workspace_id            String             @db.Uuid
+  /**
+   * The `EmailProvider` id that sends through this mailbox, e.g. "gmail".
+   */
+  provider                String             @db.VarChar(50)
+  /**
+   * The address mail is sent from. Gmail refuses to forge any other.
+   */
+  email                   String             @db.VarChar(320)
+  display_name            String?            @db.VarChar(255)
+  status                  EmailAccountStatus @default(connected)
+  /**
+   * The user who granted access. A personal mailbox sends only for them.
+   */
+  user_id                 String?            @db.Uuid
+  /**
+   * The provider's own id for the account (Google's `sub`), so re-connecting
+   * the same mailbox updates the grant instead of opening a second row.
+   */
+  provider_account_id     String?            @db.VarChar(255)
+  /**
+   * AES-256-GCM ciphertext, never plaintext. See `src/lib/crypto.ts`.
+   */
+  access_token            String?            @db.Text
+  refresh_token           String?            @db.Text
+  access_token_expires_at DateTime?          @db.Timestamptz(6)
+  /**
+   * Scopes actually granted, which can be narrower than the ones asked for.
+   */
+  scope                   String?            @db.Text
+  /**
+   * Why the last send or refresh failed, for the settings screen to show.
+   */
+  last_error              String?            @db.Text
+  connected_at            DateTime           @default(now()) @db.Timestamptz(6)
+  created_at              DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime           @updatedAt @db.Timestamptz(6)
+
+  user     AppUser?       @relation(fields: [user_id], references: [id])
+  messages EmailMessage[]
+
+  @@unique([workspace_id, provider, email], map: "uq_email_account_address")
+  @@index([workspace_id, status], map: "ix_email_account_workspace_status")
+  @@map("email_account")
+}
+
+enum EmailMessageStatus {
+  /**
+   * Written down, not yet handed to a provider.
+   */
+  queued
+  /**
+   * The provider accepted it and returned an id.
+   */
+  sent
+  /**
+   * The provider rejected it; `error` says why.
+   */
+  failed
+
+  @@map("email_message_status_enum")
+}
+
+/**
+ * One outbound email, kept whether or not it was delivered.
+ * The row is written before the provider is called, so a message that fails
+ * mid-send is still visible instead of vanishing. `parent_type` / `parent_id`
+ * mirror `Note`, which is what files a message on an Entity, a Person, or a
+ * Case timeline without a join table per object.
+ */
+model EmailMessage {
+  id                  String             @id @default(uuid()) @db.Uuid
+  workspace_id        String             @db.Uuid
+  account_id          String             @db.Uuid
+  parent_type         NoteParentType?
+  parent_id           String?            @db.Uuid
+  /**
+   * Recipients, comma-separated in the order they were typed.
+   */
+  to_addresses        String             @db.Text
+  cc_addresses        String?            @db.Text
+  bcc_addresses       String?            @db.Text
+  subject             String             @db.VarChar(998)
+  body_text           String             @db.Text
+  body_html           String?            @db.Text
+  status              EmailMessageStatus @default(queued)
+  /**
+   * The provider's ids, so a later reply can be threaded onto this one.
+   */
+  provider_message_id String?            @db.VarChar(255)
+  provider_thread_id  String?            @db.VarChar(255)
+  error               String?            @db.Text
+  sent_at             DateTime?          @db.Timestamptz(6)
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime           @updatedAt @db.Timestamptz(6)
+  created_by_user_id  String?            @db.Uuid
+
+  account EmailAccount @relation(fields: [account_id], references: [id])
+
+  @@index([workspace_id, created_at], map: "ix_email_message_workspace")
+  @@index([workspace_id, parent_type, parent_id], map: "ix_email_message_parent")
+  @@map("email_message")
+}

@@ -48,24 +48,30 @@ via `archived_at`; the junctions do not.
 ## Architecture
 
 ```
-Browser ──▶ Next.js App Router
+Browser ──▶ src/proxy.ts (route guard) ──▶ Next.js App Router
               ├── /app/(crm)/*       UI (shadcn/ui components, Zustand store)
-              ├── /app/(public)/*    Customer-facing chat widget
+              ├── /app/(public)/*    Chat widget, sign-in screen
               ├── /app/api/v1/*      REST API (Zod validation, Prisma)
+              ├── /app/api/auth/*    Sign-in flow (AuthProvider → Auth0)
               └── /app/api/chat/*    Public chat API (channel key + visitor session)
                                           │
-                        ┌─────────────────┴─────────────────┐
-                        ▼                                   ▼
-                  PostgreSQL                         Redis (BullMQ)
-                                                            │
-                                                            ▼
-                                                    Worker process
-                                              (bulk import, reporting)
+                        ┌─────────────────┼─────────────────┬──────────────────┐
+                        ▼                 ▼                 ▼                  ▼
+                  PostgreSQL      Redis (BullMQ)     Identity provider    Mail provider
+                                          │             (Auth0)              (Gmail)
+                                          ▼
+                                    Worker process
+                              (bulk import, reporting, mail delivery)
 ```
 
 The worker is a separate process running the same codebase. Bulk import and
 report aggregation are the CPU- and memory-heavy parts of a CRM, so they run
 there rather than in a request handler.
+
+Both outside services sit behind an interface — `AuthProvider`
+(`src/lib/auth/types.ts`) and `EmailProvider` (`src/lib/email/types.ts`) — so
+Auth0 and Gmail are each one file plus one registry entry, and neither name
+appears anywhere else in the app. See "Signing in" and "Email".
 
 ## UI
 
@@ -100,10 +106,19 @@ list and a layout, not a new page.
   palette with much heavier borders for maximum legibility.
 - **Create/edit forms** — generated from the same per-object layout, in a
   dialog.
+- **Email** — a **Send email** action on a Person, an Entity, and a Case opens
+  a composer (`src/components/compose-email-dialog.tsx`) pre-filled with the
+  record's address; what is sent lands on that record's Activity tab.
+  **Settings → Email** (`src/app/(crm)/settings/email/page.tsx`, reached from
+  the user menu) connects and disconnects mailboxes, and says what is missing
+  when it cannot.
 - **Chat inbox** (`src/components/chat/agent-inbox.tsx`) — the one screen that
   is not metadata-driven, because a conversation is a stream rather than a
   record: a filterable list, the thread, and a composer. Chat channels *are*
   metadata-driven like every other object (`src/lib/schema/chat-channel.ts`).
+  Email settings and the composer are the same kind of exception, for the same
+  reason: neither a provider connection nor a message is a record anyone
+  browses a list of.
 
 - **Selling pages** — Products list their Offerings; an Offering page carries
   its prices (with tier bands inline), bundle components, stock, service
@@ -229,6 +244,123 @@ billing-period arithmetic are unit-tested directly in `tests/pricing.test.ts`.
 
 Discounts are recorded next to a line or a document as a type and a value, and
 never modify the catalog price.
+
+## Signing in
+
+CRM users authenticate against an identity provider over OIDC. Auth0 ships in
+the box; the app talks to `AuthProvider`, not to Auth0.
+
+```
+/api/auth/login ──▶ provider consent ──▶ /api/auth/callback ──▶ session cookie ──▶ CRM
+```
+
+- **Authorization code + PKCE.** This app never sees a password, so MFA, SSO,
+  and password policy are the provider's business.
+- **The ID token is verified** against the issuer's published JWKS —
+  RS256 only, with `iss`, `aud`, `exp`, and the `nonce` this browser started
+  with all checked (`src/lib/auth/jwt.ts`). `alg: none` and HMAC are refused.
+- **The session is a signed cookie**, http-only and short-lived
+  (`src/lib/auth/session.ts`). There is no session table to read on every
+  request or sweep on a schedule; rotating `AUTH_SESSION_SECRET` invalidates
+  every session at once.
+- **`src/proxy.ts` guards the routes** — an optimistic check that keeps a
+  signed-out browser off CRM screens. It is not the authorization boundary;
+  handlers that write on someone's behalf re-check
+  (`src/lib/auth/current-user.ts`).
+- **`app_user` maps the provider's subject to a uuid.** Records already carry
+  `owner_user_id` / `created_by_user_id` uuids, and an identity provider hands
+  out subjects like `auth0|65f0c1…`; the uuid is minted once, on first sign-in,
+  and survives a change of provider.
+
+### Configuring it
+
+Create an Auth0 **Regular Web Application** and set:
+
+| Auth0 setting | Value |
+|---|---|
+| Allowed Callback URLs | `<PUBLIC_BASE_URL>/api/auth/callback` |
+| Allowed Logout URLs | `<PUBLIC_BASE_URL>/` |
+
+Then `AUTH_PROVIDER=auth0`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`,
+`AUTH0_CLIENT_SECRET`, and `AUTH_SESSION_SECRET` (see `.env.example`).
+
+**With none of that set, nothing changes.** The `dev` provider takes over,
+`authEnabled()` is false, the route guard steps aside, and the app behaves as it
+always has: a name typed into the user menu, stored per browser. That is what
+keeps a fresh clone usable. It refuses to run in production.
+
+### Swapping the provider
+
+Write a class against `AuthProvider` in `src/lib/auth/providers/`, add a line to
+`src/lib/auth/registry.ts`, and set `AUTH_PROVIDER`. Nothing else moves: the
+session, the user mapping, the route guard, and the UI are all provider-agnostic
+by construction, and `DevAuthProvider` exists partly to keep them that way.
+
+## Email
+
+Connect a Gmail mailbox over OAuth and the CRM sends from it — from a Person, an
+Entity, or a Case, with the sent message filed on that record's timeline.
+
+```
+Settings → Email ──▶ Google consent ──▶ /api/v1/email/callback ──▶ email_account
+                                                                        │
+Record → Email ──▶ POST /api/v1/email/messages ──▶ EmailProvider.send ──┘
+```
+
+- **Narrow scope.** Only `gmail.send` is requested, which grants no read access
+  to the mailbox at all, plus `openid`/`email`/`profile` to name the account.
+- **Offline access with forced consent.** Google issues a refresh token only on
+  a first consent, and only when it is asked for — so `access_type=offline` and
+  `prompt=consent` are both required, or re-connecting a mailbox silently stores
+  tokens that cannot be renewed.
+- **Tokens are encrypted at rest** with AES-256-GCM under
+  `SECRET_ENCRYPTION_KEY` (`src/lib/crypto.ts`). Only
+  `src/lib/email/accounts.ts` reads them; providers are handed a live access
+  token and nothing else.
+- **Access tokens refresh themselves** a minute before expiry. A refresh
+  rejected with `invalid_grant` parks the mailbox as `needs_reauth` instead of
+  being retried forever.
+- **The message row is written before the provider is called**, so a send that
+  fails is a `failed` row with the provider's reason on it rather than an event
+  that left no trace.
+- **Sending is inline, not queued.** Handing a message to Gmail is one HTTPS
+  round trip, and someone who just pressed Send should learn immediately that
+  the address was wrong — unlike import and reporting, which are on the worker
+  because of how much data they touch.
+- **Disconnecting keeps the row**, with its secrets cleared: `email_message`
+  points at it, and deleting it would take the sender off every message it ever
+  sent.
+
+Chat verification codes go through the same provider (`src/worker/jobs/deliver-chat-code.ts`),
+so one connected mailbox serves both. With none connected, they are logged as
+before.
+
+### Configuring it
+
+Create an OAuth client ID of type **Web application** in the Google Cloud
+console with the Gmail API enabled, and add
+`<PUBLIC_BASE_URL>/api/v1/email/callback` as an authorized redirect URI. Then
+set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `SECRET_ENCRYPTION_KEY`, and
+connect a mailbox from **Settings → Email** in the app.
+
+With no credentials, `EMAIL_PROVIDER` falls back to the `console` provider
+outside production: it logs the fully rendered message and reports success, so
+the whole path — compose, outbound row, timeline entry — is developable with no
+Google project. It is never the fallback in production, because silently
+swallowing a customer's mail is worse than failing to send it.
+
+### Swapping the provider
+
+`EmailProvider` (`src/lib/email/types.ts`) is two methods plus, for a provider
+whose mailboxes are connected by a person rather than configured in the
+environment, the consent/exchange/refresh surface of `OAuthEmailProvider`. Add a
+class in `src/lib/email/providers/`, a line in `src/lib/email/registry.ts`, and
+set `EMAIL_PROVIDER`. `email_account.provider` records which implementation owns
+each mailbox, so changing the setting cannot strand rows behind a backend that
+no longer handles them.
+
+RFC 5322 rendering is shared (`src/lib/email/mime.ts`) rather than owned by
+Gmail, because SMTP and Microsoft Graph want the same bytes.
 
 ## Chat
 
@@ -367,6 +499,10 @@ npm run dev       # Next.js app on :3000
 npm run worker    # background worker (separate terminal, required for import/reports)
 ```
 
+Signing in and sending mail are both optional: with none of the `AUTH0_*` or
+`GOOGLE_*` variables set, the app runs exactly as it did before either existed.
+See "Signing in" and "Email" for turning them on.
+
 `npm run db:seed` loads its data into a fixed workspace id
 (`src/lib/demo-workspace.ts`) that the UI defaults to, so a fresh browser
 shows a populated CRM immediately — no id to copy in by hand. Switch
@@ -398,6 +534,33 @@ parameter (on create, `workspace_id` is part of the body).
 | Requests | `/api/v1/requests` |
 | Notes | `/api/v1/notes` |
 | Chat channels | `/api/v1/chat-channels` |
+
+### Email endpoints
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/v1/email/connect` | Redirects to the provider's consent screen to connect a mailbox |
+| `GET /api/v1/email/callback` | Finishes that flow and stores the grant; redirects back to Settings → Email |
+| `GET /api/v1/email/accounts` | Connected mailboxes, plus which provider is active and whether it is configured |
+| `DELETE /api/v1/email/accounts/{id}` | Disconnects a mailbox (clears its secrets; the row stays) |
+| `POST /api/v1/email/messages` | Sends a message and files it against a record |
+| `GET /api/v1/email/messages` | Sent mail, optionally for one record |
+
+`POST /api/v1/email/messages` answers `201` with the stored message whether or
+not the provider accepted it — `status` is `sent` or `failed`, and `error`
+carries the provider's reason. A rejected address is a recorded outcome, not a
+broken request; only a malformed request is a 4xx.
+
+### Auth endpoints
+
+Outside `/api/v1`, since they are the flow rather than a resource:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/auth/login` | Starts the OIDC flow |
+| `GET /api/auth/callback` | Completes it, upserts the user, sets the session cookie |
+| `POST /api/auth/logout` | Clears the session and ends the provider's session too |
+| `GET /api/auth/session` | Who is signed in, and whether this deployment requires it |
 | Chat contacts | `/api/v1/chat-contacts` |
 | Chat conversations | `/api/v1/chat-conversations` |
 | Chat messages | `/api/v1/chat-messages` |
@@ -487,8 +650,9 @@ Errors return `{ "detail": ... }`:
 
 | Status | Meaning |
 |---|---|
+| 401 | Sign-in required (only when an identity provider is configured) |
 | 404 | No such record in this workspace |
-| 409 | Unique constraint violation (e.g. duplicate `case_number`) |
+| 409 | Unique constraint violation (e.g. duplicate `case_number`), or a mailbox that needs reconnecting |
 | 422 | Validation failed; `detail` carries the field-level issues |
 
 ## Development
@@ -528,6 +692,12 @@ The test database needs the same schema as the dev one — run
 - Catalog rows describe what *can* be sold; quote and order lines record what
   *was* sold, as a snapshot. Never make a transaction read through to the
   catalog for a name, a price, or a term.
+- **Anything outside this app sits behind an interface.** `AuthProvider`
+  (`src/lib/auth/types.ts`) and `EmailProvider` (`src/lib/email/types.ts`) each
+  have a real second implementation — `dev` and `console` — that is not a mock:
+  they are what a fresh clone runs on, and they are what stops the interface
+  quietly growing a shape only Auth0 or only Gmail can satisfy. A provider id is
+  a `VarChar`, never an enum, so adding one is never a migration.
 - shadcn/ui components live in `src/components/ui` and are owned by this repo,
   as shadcn intends — edit them directly.
 - On the UI side, `src/lib/schema/*.ts` defines each object's fields
@@ -540,16 +710,27 @@ The test database needs the same schema as the dev one — run
 
 ## Known gaps
 
-- **No authentication or authorization for CRM users.** `workspace_id` is
-  supplied by the caller and is not a security boundary. Do not expose this
-  service publicly as-is. The "current user" in the UI (for owner assignment and
-  activity attribution) is a name typed into the user menu, stored per-browser —
-  not a real identity. Chat's `auth_mode` authenticates *customers* on a
-  channel, which is a different question: it decides who may read and write one
-  visitor's threads, not who may use the CRM.
-- **Chat verification codes are not actually emailed.** Delivery is a queued job
-  that logs them (see "Chat"), and outside production the code comes back in the
-  API response.
+- **Authentication, but not yet authorization.** Signing in (see "Signing in")
+  says *who* you are; nothing yet says *which workspaces* you may open.
+  `workspace_id` is still supplied by the caller and is still not a security
+  boundary, so a signed-in user can read another workspace by changing the id.
+  Workspace membership is the next piece of work, and `src/lib/auth/current-user.ts`
+  is where it goes. Until then, do not run this as a shared multi-tenant service.
+  Chat's `auth_mode` is a different question again: it authenticates *customers*
+  on a channel, deciding who may read one visitor's threads, not who may use
+  the CRM.
+- **Generic CRUD is not behind the route guard's re-check.** `src/proxy.ts`
+  keeps a signed-out browser off every CRM screen and out of `/api/v1`, but the
+  resource handlers themselves do not re-check the session the way the email
+  routes do — guarding them properly means the workspace membership above, not
+  another cookie read.
+- **No sign-out everywhere.** The session is a stateless signed cookie, so
+  signing out clears it on that browser. Rotating `AUTH_SESSION_SECRET` is the
+  blunt instrument that ends every session at once.
+- **Email is send-only.** Nothing reads a mailbox, so a customer's reply does
+  not come back into the CRM. `provider_thread_id` is stored against every sent
+  message precisely so that threading works when it does, and no attachments
+  can be sent yet.
 - No rate limiting on message sending, and no attachments in chat — a message is
   text, capped at 4,000 characters.
 - List/related-list filtering, search, and sort are client-side over the
