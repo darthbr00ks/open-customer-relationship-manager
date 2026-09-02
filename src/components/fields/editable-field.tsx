@@ -9,6 +9,7 @@ import type { ResourceName } from '@/lib/api/resources';
 import { invalidateList } from '@/lib/data-cache';
 import type { FieldDef } from '@/lib/schema/types';
 import { useCurrentUserStore } from '@/stores/current-user';
+import { fieldIsEditable, usePermissions } from '@/stores/permissions';
 
 /** Field types that commit on selection rather than needing an explicit save gesture. */
 const AUTO_SAVE_TYPES = new Set(['select', 'user', 'lookup', 'boolean']);
@@ -39,6 +40,7 @@ export function EditableField({
   const cancelledRef = useRef(false);
   const saveInFlightRef = useRef(false);
   const currentUser = useCurrentUserStore();
+  const permissions = usePermissions();
 
   useEffect(() => {
     if (!editing) return;
@@ -46,7 +48,10 @@ export function EditableField({
     el?.focus();
   }, [editing]);
 
-  if (field.readOnly) {
+  // Field-level security lands in the same place as `readOnly`: the value is
+  // still shown, it just cannot be edited. The server refuses the write either
+  // way — this is so nobody types into a box that was never going to save.
+  if (field.readOnly || !fieldIsEditable(permissions, resource, field.key)) {
     return <FieldValue field={field} value={value} workspaceId={workspaceId} />;
   }
 

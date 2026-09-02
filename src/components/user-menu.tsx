@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { LogIn, LogOut, Mail } from 'lucide-react';
+import { LogIn, LogOut, Mail, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -85,6 +85,12 @@ export function UserMenu() {
           <Button asChild variant="outline" size="sm" className="w-full justify-start">
             <Link href="/settings/email">
               <Mail /> Email settings
+            </Link>
+          </Button>
+
+          <Button asChild variant="outline" size="sm" className="w-full justify-start">
+            <Link href="/settings/profiles">
+              <ShieldCheck /> Profiles &amp; permissions
             </Link>
           </Button>
 

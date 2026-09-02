@@ -12,10 +12,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { NAV_OBJECT_ORDER, OBJECTS, type ObjectKey } from '@/lib/objects';
+import { canDo, usePermissions } from '@/stores/permissions';
 
 /** Creates any supported object from the application header. */
 export function CreateMenu({ workspaceId }: { workspaceId: string | null }) {
   const [creating, setCreating] = useState<ObjectKey | null>(null);
+  const permissions = usePermissions();
+
+  const creatable = NAV_OBJECT_ORDER.filter((key) =>
+    canDo(permissions, OBJECTS[key].resource, 'create'),
+  );
 
   return (
     <>
@@ -26,7 +32,7 @@ export function CreateMenu({ workspaceId }: { workspaceId: string | null }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {NAV_OBJECT_ORDER.map((key) => {
+          {creatable.map((key) => {
             const object = OBJECTS[key];
             const Icon = object.icon;
             return (

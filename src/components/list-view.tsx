@@ -30,6 +30,7 @@ import { objectAllFields, titleOf, OBJECTS, type ObjectKey } from '@/lib/objects
 import type { FieldDef } from '@/lib/schema/types';
 import { useSavedViewsStore, type SavedView, type ViewFilter } from '@/stores/saved-views';
 import { useCurrentUserStore } from '@/stores/current-user';
+import { fieldIsVisible, usePermissions } from '@/stores/permissions';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 type Row = Record<string, unknown> & { id: string; archived_at: string | null };
@@ -52,6 +53,7 @@ export function ListView({ objectKey }: { objectKey: ObjectKey }) {
   const object = OBJECTS[objectKey];
   const workspaceId = useWorkspaceStore((state) => state.workspaceId);
   const currentUserId = useCurrentUserStore((state) => state.userId);
+  const permissions = usePermissions();
 
   // Select the raw (referentially stable) array and filter it here rather than in the selector —
   // a selector that returns a fresh array every call defeats zustand's equality check and loops.
@@ -115,7 +117,9 @@ export function ListView({ objectKey }: { objectKey: ObjectKey }) {
   }, [rows, filters, search, sort, currentUserId, object.searchFields]);
 
   const visible = filtered.slice(0, visibleCount);
-  const columnFields = columns.map((key) => objectAllFields(objectKey).find((field) => field.key === key)).filter(Boolean) as FieldDef[];
+  const columnFields = (
+    columns.map((key) => objectAllFields(objectKey).find((field) => field.key === key)).filter(Boolean) as FieldDef[]
+  ).filter((field) => fieldIsVisible(permissions, object.resource, field.key));
 
   const toggleSort = (key: string) =>
     setSort((current) => (current.field === key ? { field: key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { field: key, direction: 'asc' }));

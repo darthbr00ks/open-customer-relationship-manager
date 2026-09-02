@@ -10,6 +10,7 @@ import { api, ApiError } from '@/lib/api-client';
 import { invalidateList } from '@/lib/data-cache';
 import { OBJECTS, type ObjectKey } from '@/lib/objects';
 import { useCurrentUserStore } from '@/stores/current-user';
+import { fieldIsEditable, usePermissions } from '@/stores/permissions';
 import { useUIStore } from '@/stores/ui';
 
 type Row = Record<string, unknown>;
@@ -40,6 +41,7 @@ export function RecordFormDialog({
   const density = useUIStore((state) => state.density);
   const sectionColumns = useUIStore((state) => state.sectionColumns);
   const currentUser = useCurrentUserStore();
+  const permissions = usePermissions();
 
   // Every caller mounts this dialog fresh each time it opens (conditional rendering, not a
   // persistent `open` toggle), so a lazy initializer seeds the draft once — no effect needed.
@@ -49,10 +51,17 @@ export function RecordFormDialog({
 
   const set = (key: string, value: unknown) => setForm((current) => ({ ...current, [key]: value }));
 
+  // A field the caller may not write is left out of the form rather than shown
+  // disabled: the API refuses the whole write if one turns up in the body, so an
+  // unwritable input could only ever fail the save.
   const sections = object.layout.sections
     .map((section) => ({
       ...section,
-      fields: section.fields.filter((field) => (mode === 'create' ? !field.readOnly : true)),
+      fields: section.fields.filter(
+        (field) =>
+          (mode === 'create' ? !field.readOnly : true) &&
+          fieldIsEditable(permissions, object.resource, field.key),
+      ),
     }))
     .filter((section) => section.fields.length > 0);
 

@@ -1993,6 +1993,7 @@ model AppUser {
   last_login_at DateTime? @db.Timestamptz(6)
 
   email_accounts EmailAccount[]
+  profiles       ProfileAssignment[]
 
   @@unique([auth_provider, external_id], map: "uq_app_user_provider_subject")
   @@index([email], map: "ix_app_user_email")
@@ -2127,4 +2128,144 @@ model EmailMessage {
   @@index([workspace_id, created_at], map: "ix_email_message_workspace")
   @@index([workspace_id, parent_type, parent_id], map: "ix_email_message_parent")
   @@map("email_message")
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Profiles and permissions
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/**
+ * A named set of permissions, assigned to users.
+ * Permissions hang off a profile rather than off a user because the question
+ * an administrator actually asks is "what may a support agent do", not "what
+ * may Sarah do" — and answering it once, for the role, is what keeps the
+ * answer consistent as people join and leave.
+ * Profiles are workspace-scoped: the same person can be an administrator in
+ * one workspace and read-only in another, which is why the assignment lives in
+ * `ProfileAssignment` rather than as a column on `AppUser`.
+ */
+model Profile {
+  id                 String    @id @default(uuid()) @db.Uuid
+  workspace_id       String    @db.Uuid
+  name               String    @db.VarChar(255)
+  /**
+   * Stable identifier used in configuration and seeds, e.g. "administrator".
+   */
+  key                String    @db.VarChar(64)
+  description        String?   @db.Text
+  /**
+   * Bypasses every check. There has to be one, or a workspace can lock itself
+   * out of its own permission screens.
+   */
+  is_admin           Boolean   @default(false)
+  /**
+   * Applied to a signed-in user with no assignment of their own. Without one,
+   * an unassigned user can do nothing.
+   */
+  is_default         Boolean   @default(false)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  created_by_user_id String?   @db.Uuid
+  updated_by_user_id String?   @db.Uuid
+  archived_at        DateTime? @db.Timestamptz(6)
+
+  object_permissions ObjectPermission[]
+  field_permissions  FieldPermission[]
+  assignments        ProfileAssignment[]
+
+  @@unique([workspace_id, key], map: "uq_profile_workspace_key")
+  @@index([workspace_id], map: "ix_profile_workspace")
+  @@map("profile")
+}
+
+/**
+ * Which profile a user carries in a workspace. At most one each.
+ */
+model ProfileAssignment {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspace_id String   @db.Uuid
+  user_id      String   @db.Uuid
+  profile_id   String   @db.Uuid
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @updatedAt @db.Timestamptz(6)
+
+  user    AppUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, user_id], map: "uq_profile_assignment_user")
+  @@index([profile_id], map: "ix_profile_assignment_profile")
+  @@map("profile_assignment")
+}
+
+/**
+ * Object-level security: what a profile may do to a whole resource.
+ * `object_key` is an API resource name (`entities`, `deal-lines`) rather than a
+ * foreign key, because that is the unit the API actually enforces on and it
+ * lets a new resource be permissioned without a migration. A profile with no
+ * row for an object may do nothing with it — permission is granted, never
+ * assumed.
+ */
+model ObjectPermission {
+  id         String  @id @default(uuid()) @db.Uuid
+  profile_id String  @db.Uuid
+  object_key String  @db.VarChar(64)
+  can_read   Boolean @default(false)
+  can_create Boolean @default(false)
+  can_edit   Boolean @default(false)
+  can_delete Boolean @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@unique([profile_id, object_key], map: "uq_object_permission")
+  @@map("object_permission")
+}
+
+enum FieldAccess {
+  /**
+   * Never returned, never accepted.
+   */
+  hidden
+  /**
+   * Returned, but rejected on a write.
+   */
+  read
+  /**
+   * Returned and writable.
+   */
+  edit
+
+  @@map("field_access_enum")
+}
+
+/**
+ * Field-level security: an exception to what the object permission grants.
+ * Only restricted fields get a row. A field with none inherits its object —
+ * readable if the object is readable, writable if the object is writable —
+ * which keeps the table proportional to the restrictions an administrator
+ * actually made rather than to the size of the schema.
+ */
+model FieldPermission {
+  id         String      @id @default(uuid()) @db.Uuid
+  profile_id String      @db.Uuid
+  object_key String      @db.VarChar(64)
+  field_key  String      @db.VarChar(64)
+  access     FieldAccess
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@unique([profile_id, object_key, field_key], map: "uq_field_permission")
+  @@index([profile_id, object_key], map: "ix_field_permission_object")
+  @@map("field_permission")
 }

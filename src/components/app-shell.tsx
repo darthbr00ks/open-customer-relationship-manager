@@ -12,6 +12,7 @@ import { ThemeControl } from '@/components/theme-control';
 import { UserMenu } from '@/components/user-menu';
 import { cn } from '@/lib/utils';
 import { NAV_OBJECT_ORDER, OBJECTS } from '@/lib/objects';
+import { canDo, usePermissions } from '@/stores/permissions';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 /**
@@ -22,6 +23,13 @@ import { useWorkspaceStore } from '@/stores/workspace';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const workspaceId = useWorkspaceStore((state) => state.workspaceId);
+  const permissions = usePermissions();
+
+  // A tab for an object nobody may read leads to a screen that can only say
+  // "forbidden", so it is not offered at all.
+  const navObjects = NAV_OBJECT_ORDER.filter((key) =>
+    canDo(permissions, OBJECTS[key].resource, 'read'),
+  );
 
   return (
     <div className="flex min-h-full flex-col">
@@ -38,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <NavLink href="/" active={pathname === '/'}>
               <Home className="size-4" /> Home
             </NavLink>
-            {NAV_OBJECT_ORDER.map((key) => {
+            {navObjects.map((key) => {
               const object = OBJECTS[key];
               const Icon = object.icon;
               return (
@@ -49,9 +57,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
             {/* Chat is a workspace-wide inbox rather than one more record list, so it
                 sits at the end of the tabs instead of in `NAV_OBJECT_ORDER`. */}
-            <NavLink href="/chat" active={pathname.startsWith('/chat')}>
-              <MessagesSquare className="size-4" /> Chat
-            </NavLink>
+            {canDo(permissions, 'chat-conversations', 'read') ? (
+              <NavLink href="/chat" active={pathname.startsWith('/chat')}>
+                <MessagesSquare className="size-4" /> Chat
+              </NavLink>
+            ) : null}
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">

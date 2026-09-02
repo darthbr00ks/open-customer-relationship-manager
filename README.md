@@ -58,8 +58,8 @@ Browser ──▶ src/proxy.ts (route guard) ──▶ Next.js App Router
                         ┌─────────────────┼─────────────────┬──────────────────┐
                         ▼                 ▼                 ▼                  ▼
                   PostgreSQL      Redis (BullMQ)     Identity provider    Mail provider
-                                          │             (Auth0)              (Gmail)
-                                          ▼
+                   (profiles,               │            (Auth0)              (Gmail)
+                    permissions)            ▼
                                     Worker process
                               (bulk import, reporting, mail delivery)
 ```
@@ -68,10 +68,12 @@ The worker is a separate process running the same codebase. Bulk import and
 report aggregation are the CPU- and memory-heavy parts of a CRM, so they run
 there rather than in a request handler.
 
-Both outside services sit behind an interface — `AuthProvider`
-(`src/lib/auth/types.ts`) and `EmailProvider` (`src/lib/email/types.ts`) — so
-Auth0 and Gmail are each one file plus one registry entry, and neither name
-appears anywhere else in the app. See "Signing in" and "Email".
+Each outside service sits behind an interface — `AuthProvider`
+(`src/lib/auth/types.ts`), `EmailProvider` (`src/lib/email/types.ts`) and
+`PermissionProvider` (`src/lib/security/types.ts`) — so Auth0, Gmail and the
+profile tables are each one file plus one registry entry, and none of those
+names appears anywhere else in the app. See "Signing in", "Profiles and
+permissions", and "Email".
 
 ## UI
 
@@ -112,6 +114,13 @@ list and a layout, not a new page.
   **Settings → Email** (`src/app/(crm)/settings/email/page.tsx`, reached from
   the user menu) connects and disconnects mailboxes, and says what is missing
   when it cannot.
+- **Profiles** — **Settings → Profiles** is one grid: a row per object with
+  read/create/edit/delete, expanding to a row per field with
+  Edit / Read only / Hidden (`src/components/security/permission-grid.tsx`).
+  Object and field security are edited together because they are one decision —
+  "Support may read Deals but not the amount" is a single sentence, and
+  splitting it across two screens is how the second half gets forgotten. A
+  second tab assigns profiles to people.
 - **Chat inbox** (`src/components/chat/agent-inbox.tsx`) — the one screen that
   is not metadata-driven, because a conversation is a stream rather than a
   record: a filterable list, the thread, and a composer. Chat channels *are*
@@ -295,6 +304,91 @@ Write a class against `AuthProvider` in `src/lib/auth/providers/`, add a line to
 `src/lib/auth/registry.ts`, and set `AUTH_PROVIDER`. Nothing else moves: the
 session, the user mapping, the route guard, and the UI are all provider-agnostic
 by construction, and `DevAuthProvider` exists partly to keep them that way.
+
+## Profiles and permissions
+
+What a signed-in user may do, as two levels that compose in one direction:
+
+| Level | Question | Stored in |
+|---|---|---|
+| **Object** | May this profile read / create / edit / delete this resource at all? | `object_permission` |
+| **Field** | Of the fields it may touch, which are visible and which are writable? | `field_permission` |
+
+A `no` at the object level ends the request; field access is never consulted.
+And a field is never *more* accessible than its object — `edit` on a field of a
+read-only object still reads as `read`.
+
+### The two defaults, and why they differ
+
+- **Objects are deny-by-default.** No row means no access. Permission is granted
+  deliberately, never inherited from silence.
+- **Fields are inherit-by-default.** No row means the field is as accessible as
+  its object. Only *restrictions* are stored, so `field_permission` stays
+  proportional to what an administrator actually did rather than to the size of
+  the schema.
+
+`id` and `workspace_id` are never hidden: they are how a record is addressed,
+so masking them would break a response rather than protect it.
+
+### Enforcement
+
+In `src/lib/api/resource.ts`, which every generic endpoint goes through, so a
+new resource is permissioned the moment it is registered:
+
+- **List and read** — refused with 403 rather than returned empty. An empty list
+  is a lie that sends people hunting for a data problem that does not exist.
+  Rows come back with hidden fields stripped.
+- **Create, edit, upsert** — a write naming a field the caller may not set is
+  **refused**, not silently stripped. A dropped field looks exactly like a save
+  that worked, and the caller never learns the value was lost. An upsert needs
+  both `create` and `edit`, so `PUT` is not a way around the missing half.
+- **Archive** — needs `edit`, not `delete`: the row stays, and stays readable.
+
+The UI reads the same answers from `/api/v1/permissions/me` and stops offering
+what the server would refuse — a tab, a Create entry, a column, a form field, an
+inline editor. That is honesty, not security; every one of them is re-checked
+server-side.
+
+### Getting the first profile in
+
+There is an obvious deadlock: the profile screens are themselves permissioned,
+so the first profile can never be created by somebody who already holds one. The
+rule that resolves it is that **a workspace with no profiles is unconfigured,
+not locked down** — it behaves exactly as it did before profiles existed.
+**Settings → Profiles → Set up profiles** ends that state: it creates an
+**Administrator** and a **Standard User** profile and makes you an
+administrator. From then on only an administrator can reach those screens.
+
+Two guards keep a workspace from locking itself out afterwards: the last
+administrator profile cannot be archived or demoted, and an administrator's
+grants are not editable (they are never consulted — `AdminPermissionSet`
+short-circuits every check — so a restricted matrix would be a lie on screen).
+
+### Who gets which profile
+
+`app_user` → `profile_assignment` → `profile`, per workspace, so the same person
+can administer one workspace and read another. An unassigned user falls back to
+the workspace's **default** profile; with no default, they can do nothing.
+Assignments are edited under **Settings → Profiles → People**.
+
+### Swapping the provider
+
+`PermissionProvider` (`src/lib/security/types.ts`) resolves one caller in one
+workspace into a `PermissionSet` that is then asked many cheap questions. Add a
+class in `src/lib/security/providers/`, a line in
+`src/lib/security/registry.ts`, and set `PERMISSIONS_PROVIDER` — LDAP groups,
+OPA, or a permissions service all fit the same shape. `OpenPermissionProvider`
+grants everything and is the second implementation that keeps the interface
+honest; unlike the `dev` and `console` providers it is safe in production, since
+"everyone who can sign in may do everything" is the right answer for a
+single-team CRM.
+
+The catalog of what is permissionable — every object and every field — is
+derived from the Zod schemas already in `src/lib/api/resources.ts`
+(`src/lib/security/catalog.ts`), not written out again. A second
+hand-maintained list would drift the first time somebody added a column, and the
+failure mode of that is a field nobody can restrict because the permission
+screen has never heard of it.
 
 ## Email
 
@@ -551,6 +645,26 @@ not the provider accepted it — `status` is `sent` or `failed`, and `error`
 carries the provider's reason. A rejected address is a recorded outcome, not a
 broken request; only a malformed request is a 4xx.
 
+### Permission endpoints
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/v1/profiles` | The workspace's profiles, the active provider, and whether profiles are set up |
+| `POST /api/v1/profiles` | Create a profile (starts with nothing granted) |
+| `GET /api/v1/profiles/{id}` | One profile with its full grant matrix |
+| `PATCH /api/v1/profiles/{id}` | Rename, re-describe, change the admin/default flags |
+| `DELETE /api/v1/profiles/{id}` | Archive it (holders fall back to the default) |
+| `PUT /api/v1/profiles/{id}/permissions` | Replace the whole object + field matrix |
+| `POST /api/v1/profiles/bootstrap` | Set profiles up for a workspace and make the caller an administrator |
+| `GET`/`POST /api/v1/profile-assignments` | Who carries which profile; assign or clear |
+| `GET /api/v1/permissions/catalog` | Every object and field there is to permission |
+| `GET /api/v1/permissions/me` | The caller's own effective permissions |
+
+All but the last two require an administrator profile. The grant matrix is
+replaced wholesale rather than patched: the editor sends the complete grid it is
+showing, and patching a permission grid row by row is how a profile ends up
+half-applied.
+
 ### Auth endpoints
 
 Outside `/api/v1`, since they are the flow rather than a resource:
@@ -651,6 +765,7 @@ Errors return `{ "detail": ... }`:
 | Status | Meaning |
 |---|---|
 | 401 | Sign-in required (only when an identity provider is configured) |
+| 403 | Your profile may not do this, or the write named a field you may not set |
 | 404 | No such record in this workspace |
 | 409 | Unique constraint violation (e.g. duplicate `case_number`), or a mailbox that needs reconnecting |
 | 422 | Validation failed; `detail` carries the field-level issues |
@@ -692,12 +807,16 @@ The test database needs the same schema as the dev one — run
 - Catalog rows describe what *can* be sold; quote and order lines record what
   *was* sold, as a snapshot. Never make a transaction read through to the
   catalog for a name, a price, or a term.
-- **Anything outside this app sits behind an interface.** `AuthProvider`
-  (`src/lib/auth/types.ts`) and `EmailProvider` (`src/lib/email/types.ts`) each
-  have a real second implementation — `dev` and `console` — that is not a mock:
+- **Anything that could be decided elsewhere sits behind an interface.**
+  `AuthProvider` (`src/lib/auth/types.ts`), `EmailProvider`
+  (`src/lib/email/types.ts`) and `PermissionProvider`
+  (`src/lib/security/types.ts`) each have a real second implementation — `dev`,
+  `console` and `open` — that is not a mock:
   they are what a fresh clone runs on, and they are what stops the interface
-  quietly growing a shape only Auth0 or only Gmail can satisfy. A provider id is
-  a `VarChar`, never an enum, so adding one is never a migration.
+  quietly growing a shape only Auth0, only Gmail, or only the profile tables can
+  satisfy. A provider id is a `VarChar`, never an enum, so adding one is never a
+  migration — and so is an `object_key`, so a new resource is permissionable the
+  moment it is registered.
 - shadcn/ui components live in `src/components/ui` and are owned by this repo,
   as shadcn intends — edit them directly.
 - On the UI side, `src/lib/schema/*.ts` defines each object's fields
@@ -710,20 +829,31 @@ The test database needs the same schema as the dev one — run
 
 ## Known gaps
 
-- **Authentication, but not yet authorization.** Signing in (see "Signing in")
-  says *who* you are; nothing yet says *which workspaces* you may open.
-  `workspace_id` is still supplied by the caller and is still not a security
-  boundary, so a signed-in user can read another workspace by changing the id.
-  Workspace membership is the next piece of work, and `src/lib/auth/current-user.ts`
-  is where it goes. Until then, do not run this as a shared multi-tenant service.
+- **No workspace membership.** Profiles say what a user may do *in* a workspace
+  (see "Profiles and permissions"), but nothing says which workspaces they may
+  open at all — `workspace_id` is still supplied by the caller. A signed-in user
+  who names another workspace gets that workspace's **default** profile, or
+  nothing if it has none, so this is no longer wide open; but "no default
+  profile" is not the same as "not a member", and a workspace with a permissive
+  default is readable by anyone who can sign in. A `workspace_member` table is
+  the next piece of work, and `src/lib/auth/current-user.ts` is where it goes.
   Chat's `auth_mode` is a different question again: it authenticates *customers*
   on a channel, deciding who may read one visitor's threads, not who may use
   the CRM.
-- **Generic CRUD is not behind the route guard's re-check.** `src/proxy.ts`
-  keeps a signed-out browser off every CRM screen and out of `/api/v1`, but the
-  resource handlers themselves do not re-check the session the way the email
-  routes do — guarding them properly means the workspace membership above, not
-  another cookie read.
+- **No record-level security.** Permissions are per object and per field, not
+  per row: a profile that may read Deals may read *every* Deal in the workspace.
+  There is no owner-based sharing, no role hierarchy, and no sharing rules, so
+  Salesforce's "View All / Modify All" distinction has deliberately not been
+  modelled — it only means something once records can be restricted
+  individually.
+- **Only the generic endpoints are permissioned.** Everything through
+  `src/lib/api/resource.ts` is, which covers all CRUD on every resource. The
+  action routes that do more than CRUD — `deals/{id}/quote`,
+  `quotes/{id}/accept`, `subscriptions/{id}/amend`, `shipments/{id}/ship` — and
+  the email routes check that you are signed in but not what your profile
+  allows. They should call `guard()` too; email in particular has no object key
+  of its own yet, so "who may send as this workspace" is currently "anyone
+  signed in".
 - **No sign-out everywhere.** The session is a stateless signed cookie, so
   signing out clears it on that browser. Rotating `AUTH_SESSION_SECRET` is the
   blunt instrument that ends every session at once.

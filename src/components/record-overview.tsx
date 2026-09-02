@@ -3,6 +3,7 @@
 import { EditableField } from '@/components/fields/editable-field';
 import type { ResourceName } from '@/lib/api/resources';
 import type { ObjectLayout } from '@/lib/schema/types';
+import { fieldIsVisible, usePermissions } from '@/stores/permissions';
 import { useUIStore } from '@/stores/ui';
 
 /**
@@ -25,10 +26,21 @@ export function RecordOverview({
   recordId: string;
 }) {
   const sectionColumns = useUIStore((state) => state.sectionColumns);
+  const permissions = usePermissions();
+
+  // A hidden field is not rendered at all — not even its label. Showing "Amount"
+  // above an empty value tells the reader exactly what they were not allowed to
+  // see, and a section left with nothing in it is dropped with it.
+  const sections = layout.sections
+    .map((section) => ({
+      ...section,
+      fields: section.fields.filter((field) => fieldIsVisible(permissions, resource, field.key)),
+    }))
+    .filter((section) => section.fields.length > 0);
 
   return (
     <div className="flex flex-col" style={{ gap: 'var(--d-gap-section)' }}>
-      {layout.sections.map((section) => (
+      {sections.map((section) => (
         <section key={section.title}>
           <h3 className="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">{section.title}</h3>
           <div className="overflow-x-auto">

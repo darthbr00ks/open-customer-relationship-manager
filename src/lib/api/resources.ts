@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import * as v from '@/lib/schemas/resources';
 import * as s from '@/lib/schemas/selling';
 
-import type { ResourceConfig, ResourceDelegate } from './resource';
+import type { ResourceDefinition, ResourceDelegate } from './resource';
 
 /**
  * Prisma generates a distinct delegate type per model; the handlers only use
@@ -10,7 +10,7 @@ import type { ResourceConfig, ResourceDelegate } from './resource';
  */
 const delegate = (model: unknown) => model as unknown as ResourceDelegate;
 
-export const resources = {
+const definitions = {
   entities: {
     delegate: delegate(prisma.entity),
     label: 'Entity',
@@ -345,6 +345,17 @@ export const resources = {
     archivable: false,
     filters: ['parent_id'],
   },
-} as const satisfies Record<string, ResourceConfig>;
+} as const satisfies Record<string, ResourceDefinition>;
 
-export type ResourceName = keyof typeof resources;
+export type ResourceName = keyof typeof definitions;
+
+/**
+ * The registry, with each entry told its own key.
+ *
+ * The handlers need it: `name` is the object key permissions are granted
+ * against (`src/lib/security`), and stamping it here rather than repeating it
+ * in 34 entries is what keeps the two from ever disagreeing.
+ */
+export const resources = Object.fromEntries(
+  Object.entries(definitions).map(([name, definition]) => [name, { ...definition, name }]),
+) as { [K in ResourceName]: (typeof definitions)[K] & { name: K } };

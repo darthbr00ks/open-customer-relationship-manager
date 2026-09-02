@@ -1,4 +1,5 @@
 import { AppShell } from '@/components/app-shell';
+import { PermissionsProvider } from '@/components/permissions-provider';
 import { SessionProvider } from '@/components/session-provider';
 
 /**
@@ -13,6 +14,9 @@ export default function CrmLayout({ children }: { children: React.ReactNode }) {
       {/* Reports who is signed in into the client store the whole shell reads.
           Scoped to this group: the chat widget has visitors, not CRM users. */}
       <SessionProvider />
+      {/* And what they may do with it, so the shell stops offering what the
+          server would refuse. */}
+      <PermissionsProvider />
       <AppShell>{children}</AppShell>
     </>
   );

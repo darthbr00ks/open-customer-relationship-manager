@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import {
+  fieldWriteRefusal,
+  guard,
+  maskRow,
+  maskRows,
+  unwritableFields,
+} from '@/lib/security/guard';
+
 /* -------------------------------------------------------------------------- */
 /* Request/response helpers                                                    */
 /* -------------------------------------------------------------------------- */
@@ -119,7 +127,11 @@ export type ResourceDelegate = {
   delete(args: { where: Row }): Promise<Row>;
 };
 
-export type ResourceConfig = {
+/**
+ * A resource as it is written in the registry, before that registry stamps each
+ * entry with its own key.
+ */
+export type ResourceDefinition = {
   /** Prisma delegate, e.g. `prisma.entity`. */
   delegate: ResourceDelegate;
   /** Name used in 404 messages. */
@@ -140,6 +152,12 @@ export type ResourceConfig = {
   /** Fields rendered as `YYYY-MM-DD` rather than a full timestamp. */
   dateOnlyFields?: readonly string[];
 };
+
+/**
+ * A registered resource. `name` is both the URL segment and the object key
+ * permissions are granted against — see `src/lib/api/resources.ts`.
+ */
+export type ResourceConfig = ResourceDefinition & { name: string };
 
 /* -------------------------------------------------------------------------- */
 /* Handlers                                                                    */
@@ -163,6 +181,16 @@ export function collectionHandlers(config: ResourceConfig) {
         const params = Object.fromEntries(new URL(request.url).searchParams);
         const query = listQuerySchema.parse(params);
 
+        // Object first: a caller who may not read this resource gets a refusal
+        // rather than an empty list, which would read as "there is no data".
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'read',
+          query.workspace_id,
+        );
+        if (denied) return denied;
+
         const where: Row = { workspace_id: query.workspace_id };
         if (archivable && !query.include_archived) {
           where.archived_at = null;
@@ -182,7 +210,13 @@ export function collectionHandlers(config: ResourceConfig) {
           skip: query.offset,
         });
 
-        return NextResponse.json(rows.map((row) => serializeRow(row, dateOnlyFields)));
+        return NextResponse.json(
+          maskRows(
+            permissions,
+            config.name,
+            rows.map((row) => serializeRow(row, dateOnlyFields)),
+          ),
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -191,9 +225,28 @@ export function collectionHandlers(config: ResourceConfig) {
     async POST(request: Request) {
       try {
         const body = (await request.json().catch(() => ({}))) as Row;
+        // `workspace_id` is in the body on create, so the scope is read before
+        // it is validated — a bad one fails the schema a moment later anyway.
+        const workspaceId = z.uuid().safeParse(body.workspace_id);
+        if (!workspaceId.success) return fail(422, workspaceId.error.issues);
+
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'create',
+          workspaceId.data,
+        );
+        if (denied) return denied;
+
+        const refused = unwritableFields(permissions, config.name, body);
+        if (refused.length > 0) return fieldWriteRefusal(config.name, refused);
+
         const data = createSchema.parse(body) as Row;
         const row = await delegate.create({ data });
-        return NextResponse.json(serializeRow(row, dateOnlyFields), { status: 201 });
+        return NextResponse.json(
+          maskRow(permissions, config.name, serializeRow(row, dateOnlyFields)),
+          { status: 201 },
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -219,11 +272,21 @@ export function itemHandlers(config: ResourceConfig) {
           Object.fromEntries(new URL(request.url).searchParams),
         );
 
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'read',
+          workspace_id,
+        );
+        if (denied) return denied;
+
         const row = await findScoped(workspace_id, z.uuid().parse(id));
         if (!row) {
           return fail(404, `${label} not found`);
         }
-        return NextResponse.json(serializeRow(row, dateOnlyFields));
+        return NextResponse.json(
+          maskRow(permissions, config.name, serializeRow(row, dateOnlyFields)),
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -236,16 +299,31 @@ export function itemHandlers(config: ResourceConfig) {
           Object.fromEntries(new URL(request.url).searchParams),
         );
 
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'edit',
+          workspace_id,
+        );
+        if (denied) return denied;
+
         const existing = await findScoped(workspace_id, z.uuid().parse(id));
         if (!existing) {
           return fail(404, `${label} not found`);
         }
 
         const body = (await request.json().catch(() => ({}))) as Row;
+        // Refused, not silently dropped: a stripped field looks exactly like a
+        // save that worked, and the caller never learns the value was lost.
+        const refused = unwritableFields(permissions, config.name, body);
+        if (refused.length > 0) return fieldWriteRefusal(config.name, refused);
+
         const data = onlyProvided(updateSchema.parse(body) as Row, body);
 
         const row = await delegate.update({ where: { id }, data });
-        return NextResponse.json(serializeRow(row, dateOnlyFields));
+        return NextResponse.json(
+          maskRow(permissions, config.name, serializeRow(row, dateOnlyFields)),
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -258,8 +336,24 @@ export function itemHandlers(config: ResourceConfig) {
           Object.fromEntries(new URL(request.url).searchParams),
         );
 
+        // An upsert can create or update, so it needs both grants rather than
+        // becoming a way around whichever one the caller lacks.
+        const readable = await guard(request, config.name, 'create', workspace_id);
+        if (readable.response) return readable.response;
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'edit',
+          workspace_id,
+        );
+        if (denied) return denied;
+
         const parsedId = z.uuid().parse(id);
         const body = (await request.json().catch(() => ({}))) as Row;
+
+        const refused = unwritableFields(permissions, config.name, body);
+        if (refused.length > 0) return fieldWriteRefusal(config.name, refused);
+
         // Merge workspace_id from the query string so callers don't repeat it in the body.
         const createData = createSchema.parse({ ...body, workspace_id }) as Row;
         const updateData = onlyProvided(updateSchema.parse(body) as Row, body);
@@ -269,7 +363,9 @@ export function itemHandlers(config: ResourceConfig) {
           create: { id: parsedId, ...createData },
           update: updateData,
         });
-        return NextResponse.json(serializeRow(row, dateOnlyFields));
+        return NextResponse.json(
+          maskRow(permissions, config.name, serializeRow(row, dateOnlyFields)),
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -282,13 +378,23 @@ export function itemHandlers(config: ResourceConfig) {
           Object.fromEntries(new URL(request.url).searchParams),
         );
 
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'delete',
+          workspace_id,
+        );
+        if (denied) return denied;
+
         const existing = await findScoped(workspace_id, z.uuid().parse(id));
         if (!existing) {
           return fail(404, `${label} not found`);
         }
 
         const row = await delegate.delete({ where: { id, workspace_id } });
-        return NextResponse.json(serializeRow(row, dateOnlyFields));
+        return NextResponse.json(
+          maskRow(permissions, config.name, serializeRow(row, dateOnlyFields)),
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
@@ -308,6 +414,16 @@ export function archiveHandler(config: ResourceConfig) {
           Object.fromEntries(new URL(request.url).searchParams),
         );
 
+        // Archiving is an update, not a delete: the row stays and stays
+        // readable, so `edit` is the grant it needs.
+        const { permissions, response: denied } = await guard(
+          request,
+          config.name,
+          'edit',
+          workspace_id,
+        );
+        if (denied) return denied;
+
         const existing = await delegate.findFirst({
           where: { id: z.uuid().parse(id), workspace_id },
         });
@@ -319,7 +435,9 @@ export function archiveHandler(config: ResourceConfig) {
           where: { id },
           data: { archived_at: new Date() },
         });
-        return NextResponse.json(serializeRow(row, dateOnlyFields));
+        return NextResponse.json(
+          maskRow(permissions, config.name, serializeRow(row, dateOnlyFields)),
+        );
       } catch (error) {
         return toErrorResponse(error);
       }
